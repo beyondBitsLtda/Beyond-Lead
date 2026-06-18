@@ -1,19 +1,14 @@
 // /api/process-lead.js
-// Para UMA URL: faz scraping com cheerio, extrai dados com Gemini 1.5 Flash
-// e cria um card no Trello.
+// Versão com limpeza de URL + Referer + Wikipedia filtrada.
 
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import https from 'https';
 
-// Agent que ignora certificados SSL inválidos.
-// Muitos sites brasileiros pequenos têm certificados expirados/auto-assinados.
-const httpsAgent = new https.Agent({
-  rejectUnauthorized: false
-});
+const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
-// Redes sociais que sempre bloqueiam scrapers — descartamos automaticamente.
-const SOCIAL_DOMAINS = [
+// Domínios filtrados antes do scraping (redes sociais + Wikipedia + Google)
+const BLOCKED_DOMAINS = [
   'instagram.com',
   'facebook.com',
   'linkedin.com',
@@ -23,10 +18,20 @@ const SOCIAL_DOMAINS = [
   'youtube.com',
   'pinterest.com',
   'wa.me',
-  'whatsapp.com'
+  'whatsapp.com',
+  'wikipedia.org',
+  'google.com',
+  'google.com.br',
+  'maps.google.com'
 ];
 
-// Headers de browser real — reduz bloqueios anti-bot.
+// Parâmetros de tracking que quebram a URL — sempre removemos antes de acessar
+const TRACKING_PARAMS = [
+  'srsltid', 'gclid', 'fbclid', 'msclkid',
+  'utm_source', 'utm_medium', 'utm_campaign',
+  'utm_term', 'utm_content', 'ref', 'source'
+];
+
 const BROWSER_HEADERS = {
   'User-Agent':
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
@@ -36,12 +41,10 @@ const BROWSER_HEADERS = {
   'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
   'Accept-Encoding': 'gzip, deflate, br',
   Connection: 'keep-alive',
-  'Upgrade-Insecure-Requests': '1'
+  'Upgrade-Insecure-Requests': '1',
+  Referer: 'https://www.google.com/'
 };
 
-/* ============================================================
-   Handler principal
-   ============================================================ */
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
@@ -54,34 +57,36 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Parâmetro "url" inválido ou ausente.' });
   }
 
-  // Filtra redes sociais antes de gastar tempo
-  if (isSocialNetwork(url)) {
+  if (isBlockedDomain(url)) {
     return res.status(200).json({
       success: false,
       url,
       stage: 'filter',
-      reason: 'URL de rede social — bloqueia scrapers automatizados.'
+      reason: 'Domínio filtrado (rede social, Wikipedia ou bot-protegido).'
     });
   }
 
+  // Limpa parâmetros de tracking ANTES de qualquer requisição
+  const cleanedUrl = cleanUrl(url);
+
   try {
-    const cleanText = await scrapeSite(url);
+    const cleanText = await scrapeSite(cleanedUrl);
 
     if (!cleanText || cleanText.length < 80) {
       return res.status(200).json({
         success: false,
-        url,
+        url: cleanedUrl,
         stage: 'scrape',
         reason: 'Conteúdo insuficiente extraído do site.'
       });
     }
 
-    const lead = await extractWithGemini(cleanText, url);
-    const card = await createTrelloCard(lead, url, query);
+    const lead = await extractWithGemini(cleanText, cleanedUrl);
+    const card = await createTrelloCard(lead, cleanedUrl, query);
 
     return res.status(200).json({
       success: true,
-      url,
+      url: cleanedUrl,
       lead,
       trello: {
         id: card.id,
@@ -90,29 +95,25 @@ export default async function handler(req, res) {
       }
     });
   } catch (error) {
-    console.error(`[/api/process-lead] erro em ${url}:`, error.message);
+    console.error(`[/api/process-lead] erro em ${cleanedUrl}:`, error.message);
     return res.status(200).json({
       success: false,
-      url,
+      url: cleanedUrl,
       error: error.message || 'Erro desconhecido ao processar lead.'
     });
   }
 }
 
-/* ============================================================
-   1) Scraping
-   ============================================================ */
 async function scrapeSite(url) {
   const response = await axios.get(url, {
     timeout: 20000,
     maxRedirects: 5,
     httpsAgent,
     headers: BROWSER_HEADERS,
-    validateStatus: (status) => status >= 200 && status < 400
+    validateStatus: (s) => s >= 200 && s < 400
   });
 
   const $ = cheerio.load(response.data);
-
   $(
     'script, style, noscript, iframe, svg, img, link, meta, ' +
       'header nav, footer, .cookie, .cookies, .modal, .popup, ' +
@@ -121,20 +122,15 @@ async function scrapeSite(url) {
 
   let text = $('body').text().replace(/\s+/g, ' ').trim();
   if (text.length > 8000) text = text.slice(0, 8000);
-
   return text;
 }
 
-/* ============================================================
-   2) Extração com Gemini
-   ============================================================ */
 async function extractWithGemini(text, url) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY não configurada.');
 
-  const model = 'gemini-1.5-flash';
   const endpoint =
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
   const prompt = [
     'Você é um assistente de extração de dados para prospecção comercial B2B.',
@@ -143,15 +139,15 @@ async function extractWithGemini(text, url) {
     'sem markdown, sem comentários, sem texto antes ou depois.',
     '',
     'Campos:',
-    '- nome_empresa (string|null): nome comercial da empresa',
-    '- email (string|null): primeiro e-mail comercial encontrado',
-    '- telefone (string|null): telefone com DDD, no formato (XX) XXXXX-XXXX se possível',
-    '- nicho (string|null): segmento de atuação em uma frase curta',
-    '- resumo (string|null): descrição de 1-2 frases do que a empresa faz',
+    '- nome_empresa (string|null)',
+    '- email (string|null)',
+    '- telefone (string|null) no formato (XX) XXXXX-XXXX se possível',
+    '- nicho (string|null) em uma frase curta',
+    '- resumo (string|null) de 1-2 frases',
     '',
-    'Use null quando a informação não estiver clara. Não invente dados.',
+    'Use null quando não estiver claro. Não invente dados.',
     '',
-    'Texto do site:',
+    'Texto:',
     '"""',
     text,
     '"""'
@@ -167,24 +163,18 @@ async function extractWithGemini(text, url) {
         responseMimeType: 'application/json'
       }
     },
-    {
-      timeout: 30000,
-      headers: { 'Content-Type': 'application/json' }
-    }
+    { timeout: 30000, headers: { 'Content-Type': 'application/json' } }
   );
 
-  const raw =
-    response.data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
-
+  const raw = response.data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
   if (!raw) throw new Error('Gemini retornou resposta vazia.');
 
   const cleaned = raw.replace(/^```json\s*/i, '').replace(/```$/g, '').trim();
-
   let parsed;
   try {
     parsed = JSON.parse(cleaned);
   } catch {
-    throw new Error('JSON inválido retornado pelo Gemini: ' + cleaned.slice(0, 120));
+    throw new Error('JSON inválido do Gemini: ' + cleaned.slice(0, 120));
   }
 
   return {
@@ -196,22 +186,16 @@ async function extractWithGemini(text, url) {
   };
 }
 
-/* ============================================================
-   3) Card no Trello
-   ============================================================ */
 async function createTrelloCard(lead, url, query) {
   const apiKey = process.env.TRELLO_API_KEY;
   const token = process.env.TRELLO_TOKEN;
   const listId = process.env.TRELLO_LIST_ID;
 
   if (!apiKey || !token || !listId) {
-    throw new Error(
-      'Credenciais do Trello (TRELLO_API_KEY, TRELLO_TOKEN, TRELLO_LIST_ID) não configuradas.'
-    );
+    throw new Error('Credenciais do Trello não configuradas.');
   }
 
   const cardName = lead.nome_empresa || safeHostname(url);
-
   const desc = [
     `**Nicho:** ${lead.nicho || '—'}`,
     `**E-mail:** ${lead.email || '—'}`,
@@ -223,51 +207,43 @@ async function createTrelloCard(lead, url, query) {
     '',
     `---`,
     `**Termo de busca:** ${query || '—'}`,
-    `**Prospectado em:** ${new Date().toLocaleString('pt-BR', {
-      timeZone: 'America/Sao_Paulo'
-    })}`
+    `**Prospectado em:** ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`
   ].join('\n');
 
   const response = await axios.post('https://api.trello.com/1/cards', null, {
-    params: {
-      key: apiKey,
-      token: token,
-      idList: listId,
-      name: cardName,
-      desc: desc,
-      pos: 'bottom'
-    },
+    params: { key: apiKey, token, idList: listId, name: cardName, desc, pos: 'bottom' },
     timeout: 10000
   });
 
   return response.data;
 }
 
-/* ============================================================
-   Utilitários
-   ============================================================ */
 function isValidUrl(value) {
   try {
     const u = new URL(value);
     return u.protocol === 'http:' || u.protocol === 'https:';
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }
 
-function isSocialNetwork(url) {
+function isBlockedDomain(url) {
   try {
     const hostname = new URL(url).hostname.toLowerCase();
-    return SOCIAL_DOMAINS.some((d) => hostname.includes(d));
+    return BLOCKED_DOMAINS.some((d) => hostname.includes(d));
+  } catch { return false; }
+}
+
+function cleanUrl(url) {
+  try {
+    const u = new URL(url);
+    TRACKING_PARAMS.forEach((p) => u.searchParams.delete(p));
+    return u.toString();
   } catch {
-    return false;
+    return url;
   }
 }
 
 function safeHostname(url) {
   try {
     return new URL(url).hostname.replace(/^www\./, '');
-  } catch {
-    return url;
-  }
+  } catch { return url; }
 }
