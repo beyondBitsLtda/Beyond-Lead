@@ -1,11 +1,10 @@
 // /api/search.js
-// Recebe um termo de busca e devolve até 10 URLs da Google Custom Search API.
-// Roda como Vercel Serverless Function (Node.js).
+// Recebe um termo de busca e devolve até 10 URLs via Serper.dev (proxy do Google).
+// Substitui a antiga Google Custom Search API (fechada para novos clientes).
 
 import axios from 'axios';
 
 export default async function handler(req, res) {
-  // Aceita apenas POST
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ error: 'Método não permitido. Use POST.' });
@@ -19,32 +18,36 @@ export default async function handler(req, res) {
     });
   }
 
-  const apiKey = process.env.GOOGLE_SEARCH_API_KEY;
-  const cx = process.env.GOOGLE_SEARCH_CX;
+  const apiKey = process.env.SERPER_API_KEY;
 
-  if (!apiKey || !cx) {
+  if (!apiKey) {
     return res.status(500).json({
-      error: 'Variáveis GOOGLE_SEARCH_API_KEY e/ou GOOGLE_SEARCH_CX não configuradas.'
+      error: 'Variável SERPER_API_KEY não configurada.'
     });
   }
 
   try {
-    const response = await axios.get('https://www.googleapis.com/customsearch/v1', {
-      params: {
-        key: apiKey,
-        cx: cx,
+    const response = await axios.post(
+      'https://google.serper.dev/search',
+      {
         q: query.trim(),
-        num: 10,          // Máximo permitido em uma chamada
-        hl: 'pt-BR',      // Idioma de interface
-        gl: 'br'          // País de busca (Brasil)
+        gl: 'br',         // Brasil
+        hl: 'pt-br',      // Português do Brasil
+        num: 10
       },
-      timeout: 15000
-    });
+      {
+        headers: {
+          'X-API-KEY': apiKey,
+          'Content-Type': 'application/json'
+        },
+        timeout: 15000
+      }
+    );
 
-    const items = response.data.items || [];
+    const organic = response.data?.organic || [];
 
-    // Normaliza saída — só o necessário para a fila do frontend
-    const results = items.map((item) => ({
+    // Normaliza saída no mesmo formato que o frontend já espera
+    const results = organic.slice(0, 10).map((item) => ({
       title: item.title,
       link: item.link,
       snippet: item.snippet || ''
@@ -58,15 +61,15 @@ export default async function handler(req, res) {
     });
   } catch (error) {
     const apiError =
-      error.response?.data?.error?.message ||
+      error.response?.data?.message ||
       error.message ||
-      'Erro desconhecido na Google Custom Search.';
+      'Erro desconhecido ao consultar Serper.';
 
     console.error('[/api/search] erro:', apiError);
 
     return res.status(502).json({
       success: false,
-      error: 'Falha ao consultar a Google Custom Search.',
+      error: 'Falha ao consultar a Serper Search.',
       details: apiError
     });
   }
