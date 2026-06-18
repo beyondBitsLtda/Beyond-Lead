@@ -1,11 +1,43 @@
 // /api/process-lead.js
 // Para UMA URL: faz scraping com cheerio, extrai dados com Gemini 1.5 Flash
-// e cria um card no Trello. Retorna o resultado para o frontend.
-//
-// Tempo máximo configurado em vercel.json (60s).
+// e cria um card no Trello.
 
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import https from 'https';
+
+// Agent que ignora certificados SSL inválidos.
+// Muitos sites brasileiros pequenos têm certificados expirados/auto-assinados.
+const httpsAgent = new https.Agent({
+  rejectUnauthorized: false
+});
+
+// Redes sociais que sempre bloqueiam scrapers — descartamos automaticamente.
+const SOCIAL_DOMAINS = [
+  'instagram.com',
+  'facebook.com',
+  'linkedin.com',
+  'twitter.com',
+  'x.com',
+  'tiktok.com',
+  'youtube.com',
+  'pinterest.com',
+  'wa.me',
+  'whatsapp.com'
+];
+
+// Headers de browser real — reduz bloqueios anti-bot.
+const BROWSER_HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+    '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  Accept:
+    'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+  'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+  'Accept-Encoding': 'gzip, deflate, br',
+  Connection: 'keep-alive',
+  'Upgrade-Insecure-Requests': '1'
+};
 
 /* ============================================================
    Handler principal
@@ -19,13 +51,20 @@ export default async function handler(req, res) {
   const { url, query } = req.body || {};
 
   if (!url || !isValidUrl(url)) {
-    return res.status(400).json({
-      error: 'Parâmetro "url" inválido ou ausente.'
+    return res.status(400).json({ error: 'Parâmetro "url" inválido ou ausente.' });
+  }
+
+  // Filtra redes sociais antes de gastar tempo
+  if (isSocialNetwork(url)) {
+    return res.status(200).json({
+      success: false,
+      url,
+      stage: 'filter',
+      reason: 'URL de rede social — bloqueia scrapers automatizados.'
     });
   }
 
   try {
-    // 1) Scraping — extrai texto limpo do site
     const cleanText = await scrapeSite(url);
 
     if (!cleanText || cleanText.length < 80) {
@@ -37,10 +76,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // 2) Gemini — extrai dados estruturados em JSON
     const lead = await extractWithGemini(cleanText, url);
-
-    // 3) Trello — cria card
     const card = await createTrelloCard(lead, url, query);
 
     return res.status(200).json({
@@ -55,8 +91,6 @@ export default async function handler(req, res) {
     });
   } catch (error) {
     console.error(`[/api/process-lead] erro em ${url}:`, error.message);
-    // Retorna 200 para o frontend conseguir continuar a fila normalmente,
-    // mas indicando que este lead específico falhou.
     return res.status(200).json({
       success: false,
       url,
@@ -66,41 +100,33 @@ export default async function handler(req, res) {
 }
 
 /* ============================================================
-   1) Scraping com cheerio
+   1) Scraping
    ============================================================ */
 async function scrapeSite(url) {
   const response = await axios.get(url, {
-    timeout: 15000,
+    timeout: 20000,
     maxRedirects: 5,
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (compatible; LeadProspector/1.0; +https://vercel.com)',
-      Accept: 'text/html,application/xhtml+xml'
-    },
-    // Aceita qualquer status < 500 para inspecionar; deixa o axios lançar nos demais
+    httpsAgent,
+    headers: BROWSER_HEADERS,
     validateStatus: (status) => status >= 200 && status < 400
   });
 
   const $ = cheerio.load(response.data);
 
-  // Remove ruído estrutural
   $(
     'script, style, noscript, iframe, svg, img, link, meta, ' +
       'header nav, footer, .cookie, .cookies, .modal, .popup, ' +
       '[class*="banner"], [class*="advert"]'
   ).remove();
 
-  // Junta texto principal e normaliza espaços
   let text = $('body').text().replace(/\s+/g, ' ').trim();
-
-  // Limita tamanho para economizar tokens do Gemini (8k chars ~ 2k tokens)
   if (text.length > 8000) text = text.slice(0, 8000);
 
   return text;
 }
 
 /* ============================================================
-   2) Extração estruturada com Gemini 1.5 Flash
+   2) Extração com Gemini
    ============================================================ */
 async function extractWithGemini(text, url) {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -123,7 +149,7 @@ async function extractWithGemini(text, url) {
     '- nicho (string|null): segmento de atuação em uma frase curta',
     '- resumo (string|null): descrição de 1-2 frases do que a empresa faz',
     '',
-    'Use null quando a informação não estiver clara no texto. Não invente dados.',
+    'Use null quando a informação não estiver clara. Não invente dados.',
     '',
     'Texto do site:',
     '"""',
@@ -138,7 +164,6 @@ async function extractWithGemini(text, url) {
       generationConfig: {
         temperature: 0.2,
         maxOutputTokens: 600,
-        // Força resposta como JSON
         responseMimeType: 'application/json'
       }
     },
@@ -153,20 +178,15 @@ async function extractWithGemini(text, url) {
 
   if (!raw) throw new Error('Gemini retornou resposta vazia.');
 
-  // Mesmo com responseMimeType=application/json, ocasionalmente o Gemini
-  // pode embrulhar em ```json ... ```. Remove se houver.
   const cleaned = raw.replace(/^```json\s*/i, '').replace(/```$/g, '').trim();
 
   let parsed;
   try {
     parsed = JSON.parse(cleaned);
   } catch {
-    throw new Error(
-      'JSON inválido retornado pelo Gemini: ' + cleaned.slice(0, 120)
-    );
+    throw new Error('JSON inválido retornado pelo Gemini: ' + cleaned.slice(0, 120));
   }
 
-  // Normaliza campos
   return {
     nome_empresa: parsed.nome_empresa || null,
     email: parsed.email || null,
@@ -177,7 +197,7 @@ async function extractWithGemini(text, url) {
 }
 
 /* ============================================================
-   3) Criação do card no Trello
+   3) Card no Trello
    ============================================================ */
 async function createTrelloCard(lead, url, query) {
   const apiKey = process.env.TRELLO_API_KEY;
@@ -208,21 +228,17 @@ async function createTrelloCard(lead, url, query) {
     })}`
   ].join('\n');
 
-  const response = await axios.post(
-    'https://api.trello.com/1/cards',
-    null,
-    {
-      params: {
-        key: apiKey,
-        token: token,
-        idList: listId,
-        name: cardName,
-        desc: desc,
-        pos: 'bottom'
-      },
-      timeout: 10000
-    }
-  );
+  const response = await axios.post('https://api.trello.com/1/cards', null, {
+    params: {
+      key: apiKey,
+      token: token,
+      idList: listId,
+      name: cardName,
+      desc: desc,
+      pos: 'bottom'
+    },
+    timeout: 10000
+  });
 
   return response.data;
 }
@@ -234,6 +250,15 @@ function isValidUrl(value) {
   try {
     const u = new URL(value);
     return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function isSocialNetwork(url) {
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    return SOCIAL_DOMAINS.some((d) => hostname.includes(d));
   } catch {
     return false;
   }
