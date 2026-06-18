@@ -1,0 +1,17 @@
+{
+  "name": "prospect-leads",
+  "version": "1.0.0",
+  "description": "Prospecção automatizada de leads com IA — Google Search + Gemini + Trello",
+  "type": "module",
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel deploy --prod"
+  },
+  "dependencies": {
+    "axios": "^1.7.7",
+    "cheerio": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18.x"
+  }
+}

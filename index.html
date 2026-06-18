@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Prospect Leads — Prospecção automatizada</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header class="hero">
+        <h1>🎯 Prospect Leads</h1>
+        <p class="subtitle">
+          Busca, extrai e cadastra leads no Trello automaticamente usando IA.
+        </p>
+      </header>
+
+      <section class="card">
+        <form id="search-form" autocomplete="off">
+          <label for="query">Termo de busca</label>
+          <input
+            type="text"
+            id="query"
+            name="query"
+            placeholder="Ex: Clínicas de estética em São Paulo"
+            required
+            minlength="3"
+          />
+          <button type="submit" id="start-btn">Iniciar Prospecção</button>
+        </form>
+
+        <div class="progress" id="progress" hidden>
+          <div class="progress-info">
+            <span id="progress-label">Aguardando início…</span>
+            <span id="progress-count">0 / 0</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-bar-fill" id="progress-fill"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="log-header">
+          <h2>Log de Atividades</h2>
+          <button type="button" id="clear-log" class="ghost">Limpar</button>
+        </div>
+        <div id="log" class="log" aria-live="polite">
+          <div class="log-empty">Nada por aqui ainda. Inicie uma busca para ver o andamento.</div>
+        </div>
+
+        <div class="summary" id="summary" hidden>
+          <h3>Resumo final</h3>
+          <ul>
+            <li>✅ Cadastrados: <strong id="sum-ok">0</strong></li>
+            <li>⚠️ Falhas: <strong id="sum-fail">0</strong></li>
+            <li>⏱️ Tempo total: <strong id="sum-time">—</strong></li>
+          </ul>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <small>
+          Backend: Vercel Serverless · Google Custom Search · Gemini 1.5 Flash · Trello API
+        </small>
+      </footer>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
