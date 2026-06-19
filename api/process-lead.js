@@ -1,6 +1,5 @@
 // /api/process-lead.js
-// Versão com deduplicação: antes de criar o card, lista os existentes
-// na lista do Trello e ignora se já houver um com o mesmo nome ou site.
+// Versão com formatação melhorada do card + link do Google Maps + deduplicação.
 
 import axios from 'axios';
 import * as cheerio from 'cheerio';
@@ -32,7 +31,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 1) DEDUPLICAÇÃO — se o usuário pediu, checa se já existe no Trello
     if (dedup) {
       const isDuplicate = await checkDuplicate(place);
       if (isDuplicate) {
@@ -45,20 +43,21 @@ export default async function handler(req, res) {
       }
     }
 
-    // 2) Monta o lead com dados do Maps
     const lead = {
-      nome_empresa: place.nome,
+      nome_empresa: smartTitleCase(place.nome),
       email: null,
-      telefone: place.telefone || null,
+      telefone: formatPhone(place.telefone),
       endereco: place.endereco || null,
-      nicho: place.categoria || null,
+      nicho: smartTitleCase(place.categoria),
       site: place.site || null,
+      maps_url: place.placeId
+        ? `https://www.google.com/maps/place/?q=place_id:${place.placeId}`
+        : null,
       rating: place.rating || null,
       reviews: place.reviews || null,
       resumo: null
     };
 
-    // 3) Se tem site, enriquece com e-mail (best-effort)
     if (place.site) {
       try {
         const cleanText = await scrapeSite(place.site);
@@ -68,11 +67,10 @@ export default async function handler(req, res) {
           lead.resumo = enrich.resumo || null;
         }
       } catch {
-        // Scrape falhou? Sem problema, segue com os dados do Maps.
+        // segue sem enriquecer
       }
     }
 
-    // 4) Cria card no Trello
     const card = await createTrelloCard(lead, query);
 
     return res.status(200).json({
@@ -94,7 +92,81 @@ export default async function handler(req, res) {
 }
 
 /* ============================================================
-   Deduplicação — consulta a lista do Trello
+   Formatação inteligente
+   ============================================================ */
+
+// Title Case que respeita siglas, preposições e acrônimos
+function smartTitleCase(text) {
+  if (!text) return null;
+
+  // Lista de palavras que ficam em minúsculo (preposições, artigos, conjunções)
+  const lowercase = new Set([
+    'de', 'da', 'do', 'das', 'dos', 'e', 'em', 'na', 'no',
+    'para', 'por', 'a', 'o', 'as', 'os', 'com', 'sem'
+  ]);
+
+  // Lista de palavras/siglas que ficam maiúsculas
+  const uppercase = new Set([
+    'me', 'eireli', 'ltda', 'sa', 's/a', 'cnpj', 'mei', 'epp'
+  ]);
+
+  return text
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .map((word, index) => {
+      // Remove pontuação para checagem
+      const clean = word.replace(/[^\wÀ-ÿ]/g, '');
+
+      // Primeira palavra sempre capitalizada
+      if (index === 0) return capitalize(word);
+
+      // Siglas conhecidas em maiúsculo
+      if (uppercase.has(clean)) return word.toUpperCase();
+
+      // Preposições e artigos em minúsculo
+      if (lowercase.has(clean)) return word;
+
+      return capitalize(word);
+    })
+    .join(' ');
+}
+
+function capitalize(word) {
+  if (!word) return '';
+  return word.charAt(0).toUpperCase() + word.slice(1);
+}
+
+// Formata telefone para padrão brasileiro (XX) XXXXX-XXXX
+function formatPhone(phone) {
+  if (!phone) return null;
+
+  const digits = phone.replace(/\D/g, '');
+
+  // Celular brasileiro: 11 dígitos (DDD + 9 + 8 dígitos)
+  if (digits.length === 11) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  }
+
+  // Fixo brasileiro: 10 dígitos
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  }
+
+  // Internacional com +55: 12 ou 13 dígitos
+  if (digits.length === 13 && digits.startsWith('55')) {
+    return `(${digits.slice(2, 4)}) ${digits.slice(4, 9)}-${digits.slice(9)}`;
+  }
+  if (digits.length === 12 && digits.startsWith('55')) {
+    return `(${digits.slice(2, 4)}) ${digits.slice(4, 8)}-${digits.slice(8)}`;
+  }
+
+  // Não reconhecido — retorna como veio
+  return phone.trim();
+}
+
+/* ============================================================
+   Deduplicação
    ============================================================ */
 async function checkDuplicate(place) {
   const apiKey = process.env.TRELLO_API_KEY;
@@ -107,11 +179,7 @@ async function checkDuplicate(place) {
     const response = await axios.get(
       `https://api.trello.com/1/lists/${listId}/cards`,
       {
-        params: {
-          key: apiKey,
-          token,
-          fields: 'name,desc,shortUrl'
-        },
+        params: { key: apiKey, token, fields: 'name,desc,shortUrl' },
         timeout: 10000
       }
     );
@@ -121,24 +189,16 @@ async function checkDuplicate(place) {
     const normalizedSite = place.site ? normalize(place.site) : null;
 
     for (const card of cards) {
-      const cardNameNorm = normalize(card.name);
-      const cardDescNorm = normalize(card.desc || '');
-
-      // Match por nome (exato após normalização)
-      if (cardNameNorm === normalizedName) {
+      if (normalize(card.name) === normalizedName) {
         return { id: card.id, name: card.name, url: card.shortUrl, match: 'nome' };
       }
-
-      // Match por site (se ambos têm site)
-      if (normalizedSite && cardDescNorm.includes(normalizedSite)) {
+      if (normalizedSite && normalize(card.desc || '').includes(normalizedSite)) {
         return { id: card.id, name: card.name, url: card.shortUrl, match: 'site' };
       }
     }
-
     return null;
   } catch (err) {
-    // Se não conseguiu consultar, segue criando (melhor duplicar do que travar)
-    console.error('[dedup] erro ao consultar Trello:', err.message);
+    console.error('[dedup] erro:', err.message);
     return null;
   }
 }
@@ -153,7 +213,7 @@ function normalize(text) {
 }
 
 /* ============================================================
-   Scraping do site para enriquecimento
+   Scraping + Gemini
    ============================================================ */
 async function scrapeSite(url) {
   const response = await axios.get(url, {
@@ -171,9 +231,6 @@ async function scrapeSite(url) {
   return text;
 }
 
-/* ============================================================
-   Extração com Gemini
-   ============================================================ */
 async function extractEmailAndSummary(text, url) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return { email: null, resumo: null };
@@ -213,7 +270,7 @@ async function extractEmailAndSummary(text, url) {
 }
 
 /* ============================================================
-   Card no Trello
+   Card no Trello — formatação caprichada
    ============================================================ */
 async function createTrelloCard(lead, query) {
   const apiKey = process.env.TRELLO_API_KEY;
@@ -224,22 +281,61 @@ async function createTrelloCard(lead, query) {
     throw new Error('Credenciais do Trello não configuradas.');
   }
 
-  const desc = [
-    `**Nicho:** ${lead.nicho || '—'}`,
-    `**Telefone:** ${lead.telefone || '—'}`,
-    `**E-mail:** ${lead.email || '—'}`,
-    `**Endereço:** ${lead.endereco || '—'}`,
-    `**Site:** ${lead.site || '—'}`,
-    lead.rating
-      ? `**Avaliação Google:** ⭐ ${lead.rating} (${lead.reviews || 0} reviews)`
-      : '',
-    '',
-    lead.resumo ? `**Resumo:**\n${lead.resumo}` : '',
-    '',
-    `---`,
-    `**Termo de busca:** ${query || '—'}`,
-    `**Prospectado em:** ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`
-  ].filter(Boolean).join('\n');
+  // Monta a descrição com seções bem separadas
+  const sections = [];
+
+  // === Seção: Informações principais ===
+  sections.push('## 📇 Informações de Contato\n');
+  const contato = [];
+  if (lead.telefone) contato.push(`📞 **Telefone:** ${lead.telefone}`);
+  if (lead.email) contato.push(`✉️ **E-mail:** ${lead.email}`);
+  if (lead.endereco) contato.push(`📍 **Endereço:** ${lead.endereco}`);
+  sections.push(contato.length ? contato.join('\n') : '_Sem dados de contato._');
+
+  // === Seção: Links úteis ===
+  sections.push('\n\n## 🔗 Links\n');
+  const links = [];
+  if (lead.site) links.push(`🌐 **Site:** ${lead.site}`);
+  if (lead.maps_url) links.push(`🗺️ **Google Maps:** ${lead.maps_url}`);
+  sections.push(links.length ? links.join('\n') : '_Sem links cadastrados._');
+
+  // === Seção: Avaliação Google ===
+  if (lead.rating) {
+    sections.push('\n\n## ⭐ Avaliação no Google\n');
+    const stars = '★'.repeat(Math.round(lead.rating)) + '☆'.repeat(5 - Math.round(lead.rating));
+    sections.push(
+      `${stars} **${lead.rating.toFixed(1)}** ` +
+      `(${lead.reviews || 0} ${lead.reviews === 1 ? 'avaliação' : 'avaliações'})`
+    );
+  }
+
+  // === Seção: Categoria/Nicho ===
+  if (lead.nicho) {
+    sections.push('\n\n## 🏷️ Categoria\n');
+    sections.push(lead.nicho);
+  }
+
+  // === Seção: Resumo ===
+  if (lead.resumo) {
+    sections.push('\n\n## 📝 Sobre o Negócio\n');
+    sections.push(lead.resumo);
+  }
+
+  // === Rodapé com metadados ===
+  sections.push('\n\n---\n');
+  sections.push(`🔎 **Termo de busca:** ${query || '—'}`);
+  sections.push(
+    `🕒 **Prospectado em:** ${new Date().toLocaleString('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })}`
+  );
+
+  const desc = sections.join('\n');
 
   const response = await axios.post('https://api.trello.com/1/cards', null, {
     params: {
