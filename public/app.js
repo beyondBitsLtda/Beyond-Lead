@@ -1,9 +1,24 @@
 // /public/app.js
-// Orquestrador da prospecção. Coleta filtros do usuário, busca no Maps,
-// aplica filtros no frontend e processa cada lead sequencialmente.
+// Orquestrador da prospecção + chat de estratégia com Gemini.
 
 (() => {
-  // Elementos
+  // ============================================================
+  // Sistema de abas
+  // ============================================================
+  const tabButtons = document.querySelectorAll('.tab-btn');
+  const tabContents = document.querySelectorAll('.tab-content');
+
+  tabButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const targetId = `tab-${btn.dataset.tab}`;
+      tabButtons.forEach((b) => b.classList.toggle('active', b === btn));
+      tabContents.forEach((c) => c.classList.toggle('active', c.id === targetId));
+    });
+  });
+
+  // ============================================================
+  // ABA 1: Prospecção
+  // ============================================================
   const form = document.getElementById('search-form');
   const queryInput = document.getElementById('query');
   const limitInput = document.getElementById('limit');
@@ -27,7 +42,6 @@
 
   let running = false;
 
-  // Utilitários
   function log(message, type = 'info') {
     const empty = logEl.querySelector('.log-empty');
     if (empty) empty.remove();
@@ -70,20 +84,16 @@
     startBtn.textContent = lock ? 'Prospectando…' : 'Iniciar Prospecção';
   }
 
-  // Filtros de qualidade aplicados no frontend antes de chamar process-lead
   function applyFilters(items, filters) {
     return items.filter((item) => {
       const p = item.place || {};
-
       if (filters.requirePhone && !p.telefone) return false;
       if (filters.requireWebsite && !p.site) return false;
       if (filters.minRating > 0 && (!p.rating || p.rating < filters.minRating)) return false;
-
       return true;
     });
   }
 
-  // Chamadas ao backend
   async function callSearch(query, limit) {
     const res = await fetch('/api/search', {
       method: 'POST',
@@ -109,13 +119,10 @@
       })
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(data.error || `HTTP ${res.status}`);
-    }
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
     return data;
   }
 
-  // Fluxo principal
   async function runProspect() {
     const query = queryInput.value.trim();
     const filters = {
@@ -146,7 +153,6 @@
     const rawItems = searchResult.results || [];
     log(`✅ ${rawItems.length} negócios encontrados.`, 'success');
 
-    // Aplicar filtros de qualidade
     const items = applyFilters(rawItems, filters);
     const filteredOut = rawItems.length - items.length;
 
@@ -163,10 +169,7 @@
 
     log(`📋 ${items.length} lead(s) entram na fila de cadastro.`, 'info');
 
-    let ok = 0;
-    let fail = 0;
-    let duplicated = 0;
-
+    let ok = 0, fail = 0, duplicated = 0;
     setProgress(0, items.length, 'Processando fila de leads…');
 
     for (let i = 0; i < items.length; i++) {
@@ -175,25 +178,18 @@
       const nomePreview = item.place?.nome || item.title || item.link;
 
       log(`[${idx}/${items.length}] 🌐 Processando: ${nomePreview}`, 'info');
-
-      if (item.place?.telefone) {
-        log(`   ↳ 📞 ${item.place.telefone}`, 'muted');
-      }
+      if (item.place?.telefone) log(`   ↳ 📞 ${item.place.telefone}`, 'muted');
       if (item.place?.rating) {
         log(`   ↳ ⭐ ${item.place.rating} (${item.place.reviews || 0} reviews)`, 'muted');
       }
 
       try {
         const result = await callProcessLead(item, query, filters.dedup);
-
         if (result.success) {
           ok++;
           const nome = result.lead?.nome_empresa || 'sem nome';
           const emailInfo = result.lead?.email ? ` · ${result.lead.email}` : '';
-          log(
-            `   ↳ ✅ Card criado: "${nome}"${emailInfo} → ${result.trello?.url || 'Trello'}`,
-            'success'
-          );
+          log(`   ↳ ✅ Card criado: "${nome}"${emailInfo} → ${result.trello?.url || 'Trello'}`, 'success');
         } else if (result.stage === 'dedup') {
           duplicated++;
           log(`   ↳ 🔁 Já existe no Trello — pulado.`, 'muted');
@@ -212,7 +208,6 @@
 
     const elapsed = Date.now() - startedAt;
     setProgress(items.length, items.length, 'Concluído ✓');
-
     log(
       `🏁 Finalizado: ${ok} criado(s), ${duplicated} duplicado(s), ${fail} falha(s) em ${fmtElapsed(elapsed)}.`,
       'success'
@@ -227,7 +222,6 @@
     running = false;
   }
 
-  // Eventos
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     if (running) return;
@@ -249,5 +243,130 @@
     summaryEl.hidden = true;
     progressEl.hidden = true;
     progressFill.style.width = '0%';
+  });
+
+  // ============================================================
+  // ABA 2: Chat de estratégia
+  // ============================================================
+  const chatForm = document.getElementById('chat-form');
+  const chatInput = document.getElementById('chat-input');
+  const chatSend = document.getElementById('chat-send');
+  const chatWindow = document.getElementById('chat-window');
+  const chatClear = document.getElementById('chat-clear');
+  const chatSuggestions = document.querySelectorAll('.suggestion');
+
+  let chatHistory = [];
+  let chatLoading = false;
+
+  function appendMessage(role, text) {
+    const empty = chatWindow.querySelector('.chat-empty');
+    if (empty) empty.remove();
+
+    const msg = document.createElement('div');
+    msg.className = `chat-message ${role}`;
+
+    // Simples conversão de **bold** para <strong>
+    const formatted = text
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\n/g, '<br>');
+    msg.innerHTML = formatted;
+
+    chatWindow.appendChild(msg);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+    return msg;
+  }
+
+  function appendTyping() {
+    const msg = document.createElement('div');
+    msg.className = 'chat-message typing';
+    msg.id = 'typing-indicator';
+    msg.textContent = 'Pensando…';
+    chatWindow.appendChild(msg);
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+  }
+
+  function removeTyping() {
+    const el = document.getElementById('typing-indicator');
+    if (el) el.remove();
+  }
+
+  async function sendChatMessage(text) {
+    if (!text || chatLoading) return;
+
+    chatLoading = true;
+    chatSend.disabled = true;
+    chatInput.disabled = true;
+
+    appendMessage('user', text);
+    appendTyping();
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          history: chatHistory
+        })
+      });
+
+      const data = await res.json().catch(() => ({}));
+      removeTyping();
+
+      if (!res.ok || !data.success) {
+        appendMessage('assistant', `⚠️ Erro: ${data.error || data.details || 'falha na consulta'}`);
+      } else {
+        appendMessage('assistant', data.reply);
+        chatHistory.push({ role: 'user', text });
+        chatHistory.push({ role: 'assistant', text: data.reply });
+
+        // Limita histórico a últimas 20 mensagens pra não estourar tokens
+        if (chatHistory.length > 20) {
+          chatHistory = chatHistory.slice(-20);
+        }
+      }
+    } catch (err) {
+      removeTyping();
+      appendMessage('assistant', `⚠️ Erro de rede: ${err.message}`);
+    }
+
+    chatLoading = false;
+    chatSend.disabled = false;
+    chatInput.disabled = false;
+    chatInput.focus();
+  }
+
+  chatForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const text = chatInput.value.trim();
+    if (!text) return;
+    chatInput.value = '';
+    sendChatMessage(text);
+  });
+
+  // Enter envia, Shift+Enter quebra linha
+  chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      chatForm.dispatchEvent(new Event('submit'));
+    }
+  });
+
+  chatSuggestions.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (chatLoading) return;
+      const prompt = btn.dataset.prompt;
+      sendChatMessage(prompt);
+    });
+  });
+
+  chatClear.addEventListener('click', () => {
+    if (chatLoading) return;
+    chatHistory = [];
+    chatWindow.innerHTML = `
+      <div class="chat-empty">
+        👋 Conversa zerada. Como posso ajudar?
+      </div>
+    `;
   });
 })();
