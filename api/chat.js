@@ -1,7 +1,5 @@
 // /api/chat.js
 // Chat com o Gemini para estratégias de prospecção.
-// Recebe uma mensagem do usuário (e opcionalmente o histórico da conversa)
-// e responde com sugestões estratégicas.
 
 import axios from 'axios';
 
@@ -40,20 +38,9 @@ export default async function handler(req, res) {
     const endpoint =
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
-    // Monta o histórico no formato do Gemini
+    // Histórico + mensagem atual
     const contents = [];
 
-    // Primeira "instrução" como mensagem do usuário (Gemini Flash não suporta system role direto)
-    contents.push({
-      role: 'user',
-      parts: [{ text: SYSTEM_PROMPT }]
-    });
-    contents.push({
-      role: 'model',
-      parts: [{ text: 'Entendido. Estou pronto para te ajudar com estratégias de prospecção. Em que posso ajudar?' }]
-    });
-
-    // Histórico da conversa
     if (Array.isArray(history)) {
       history.forEach((msg) => {
         if (msg.role && msg.text) {
@@ -65,26 +52,27 @@ export default async function handler(req, res) {
       });
     }
 
-    // Mensagem atual
     contents.push({
       role: 'user',
       parts: [{ text: message.trim() }]
     });
 
-    const response = await axios.post(
-      endpoint,
-      {
-        contents,
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 1500
-        }
+    // Payload no formato correto do Gemini 1.5
+    const payload = {
+      systemInstruction: {
+        parts: [{ text: SYSTEM_PROMPT }]
       },
-      {
-        timeout: 30000,
-        headers: { 'Content-Type': 'application/json' }
+      contents,
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 1500
       }
-    );
+    };
+
+    const response = await axios.post(endpoint, payload, {
+      timeout: 30000,
+      headers: { 'Content-Type': 'application/json' }
+    });
 
     const reply =
       response.data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ||
@@ -95,14 +83,19 @@ export default async function handler(req, res) {
       reply
     });
   } catch (error) {
+    // Captura o erro detalhado do Gemini
     const apiError =
-      error.response?.data?.error?.message || error.message || 'Erro desconhecido.';
-    console.error('[/api/chat] erro:', apiError);
+      error.response?.data?.error?.message ||
+      error.response?.data?.error ||
+      error.message ||
+      'Erro desconhecido.';
+
+    console.error('[/api/chat] erro:', JSON.stringify(error.response?.data || error.message));
 
     return res.status(502).json({
       success: false,
       error: 'Falha ao consultar o Gemini.',
-      details: apiError
+      details: typeof apiError === 'string' ? apiError : JSON.stringify(apiError)
     });
   }
 }
