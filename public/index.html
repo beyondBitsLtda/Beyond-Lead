@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
     <title>Prospect Leads — Prospecção automatizada</title>
     <link rel="stylesheet" href="/style.css" />
   </head>
@@ -26,6 +27,43 @@
             required
             minlength="3"
           />
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="limit">Quantidade de leads</label>
+              <select id="limit" name="limit">
+                <option value="5">5 leads</option>
+                <option value="10" selected>10 leads</option>
+                <option value="20">20 leads</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="min-rating">Rating mínimo no Google</label>
+              <select id="min-rating" name="min-rating">
+                <option value="0" selected>Qualquer um</option>
+                <option value="3">⭐ 3.0+</option>
+                <option value="4">⭐ 4.0+</option>
+                <option value="4.5">⭐ 4.5+</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="filters">
+            <label class="checkbox-label">
+              <input type="checkbox" id="require-phone" />
+              <span>Só leads com telefone</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="require-website" />
+              <span>Só leads com site</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="dedup" checked />
+              <span>Evitar duplicados no Trello</span>
+            </label>
+          </div>
+
           <button type="submit" id="start-btn">Iniciar Prospecção</button>
         </form>
 
@@ -53,7 +91,7 @@
           <h3>Resumo final</h3>
           <ul>
             <li>✅ Cadastrados: <strong id="sum-ok">0</strong></li>
-            <li>⚠️ Falhas: <strong id="sum-fail">0</strong></li>
+            <li>⚠️ Falhas/Duplicados: <strong id="sum-fail">0</strong></li>
             <li>⏱️ Tempo total: <strong id="sum-time">—</strong></li>
           </ul>
         </div>
@@ -61,7 +99,7 @@
 
       <footer class="footer">
         <small>
-          Backend: Vercel Serverless · Google Custom Search · Gemini 1.5 Flash · Trello API
+          Backend: Vercel Serverless · Serper Places · Gemini 1.5 Flash · Trello API
         </small>
       </footer>
     </main>
