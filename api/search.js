@@ -1,6 +1,6 @@
 // /api/search.js
 // Busca no Google Maps via Serper Places API.
-// Retorna negócios com nome, telefone, endereço e site já prontos.
+// Aceita parâmetro "limit" para controlar quantidade de resultados.
 
 import axios from 'axios';
 
@@ -10,13 +10,16 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Método não permitido. Use POST.' });
   }
 
-  const { query } = req.body || {};
+  const { query, limit } = req.body || {};
 
   if (!query || typeof query !== 'string' || query.trim().length < 3) {
     return res.status(400).json({
       error: 'Parâmetro "query" é obrigatório e deve ter no mínimo 3 caracteres.'
     });
   }
+
+  // Sanitiza o limit (entre 1 e 20)
+  const maxResults = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 20);
 
   const apiKey = process.env.SERPER_API_KEY;
   if (!apiKey) {
@@ -42,12 +45,12 @@ export default async function handler(req, res) {
 
     const places = response.data?.places || [];
 
-    // Normaliza pro frontend: o "lead" já vem rico, não precisa scrape
-    const results = places.slice(0, 10).map((p) => ({
+    const results = places.slice(0, maxResults).map((p) => ({
       title: p.title,
-      link: p.website || p.cid ? `https://www.google.com/maps/place/?q=place_id:${p.placeId}` : '',
+      link: p.website || (p.placeId
+        ? `https://www.google.com/maps/place/?q=place_id:${p.placeId}`
+        : ''),
       snippet: p.address || '',
-      // Dados ricos do Google Maps — vão direto pro Trello
       place: {
         nome: p.title,
         endereco: p.address || null,
@@ -57,7 +60,8 @@ export default async function handler(req, res) {
         rating: p.rating || null,
         reviews: p.ratingCount || null,
         latitude: p.latitude || null,
-        longitude: p.longitude || null
+        longitude: p.longitude || null,
+        placeId: p.placeId || null
       }
     }));
 
