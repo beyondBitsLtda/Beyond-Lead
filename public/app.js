@@ -1,7 +1,8 @@
 // /public/app.js
 // Orquestrador da prospecção. Faz UMA chamada ao /api/search,
-// e depois processa URLs SEQUENCIALMENTE chamando /api/process-lead.
-// Cada chamada respeita o limite de tempo do Vercel Hobby (até 60s).
+// e depois processa cada resultado SEQUENCIALMENTE via /api/process-lead.
+// Agora trabalha com dados do Google Maps (Serper Places) — passa o objeto
+// "place" inteiro adiante para o backend.
 
 (() => {
   // ----------------------------------------------------------
@@ -29,7 +30,6 @@
   // Utilitários
   // ----------------------------------------------------------
   function log(message, type = 'info') {
-    // Remove placeholder vazio na primeira inserção
     const empty = logEl.querySelector('.log-empty');
     if (empty) empty.remove();
 
@@ -82,11 +82,16 @@
     return data;
   }
 
-  async function callProcessLead(url, query) {
+  async function callProcessLead(item, query) {
+    // item contém { title, link, snippet, place: { ... } }
     const res = await fetch('/api/process-lead', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, query })
+      body: JSON.stringify({
+        url: item.link,
+        query,
+        place: item.place
+      })
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -104,7 +109,7 @@
     summaryEl.hidden = true;
     const startedAt = Date.now();
 
-    log(`🔎 Buscando: "${query}"`, 'info');
+    log(`🔎 Buscando no Google Maps: "${query}"`, 'info');
 
     let searchResult;
     try {
@@ -116,10 +121,10 @@
       return;
     }
 
-    const urls = searchResult.results || [];
-    log(`✅ ${urls.length} URLs encontradas.`, 'success');
+    const items = searchResult.results || [];
+    log(`✅ ${items.length} negócios encontrados no Maps.`, 'success');
 
-    if (urls.length === 0) {
+    if (items.length === 0) {
       log('Sem resultados para processar. Tente outro termo de busca.', 'warn');
       lockUI(false);
       running = false;
@@ -129,24 +134,37 @@
     let ok = 0;
     let fail = 0;
 
-    setProgress(0, urls.length, 'Processando fila de leads…');
+    setProgress(0, items.length, 'Processando fila de leads…');
 
-    // FILA SEQUENCIAL: uma URL por vez para respeitar o timeout do Vercel.
-    for (let i = 0; i < urls.length; i++) {
-      const { link, title } = urls[i];
+    // FILA SEQUENCIAL: um lead por vez para respeitar o timeout do Vercel.
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
       const idx = i + 1;
+      const nomePreview = item.place?.nome || item.title || item.link;
 
-      log(`[${idx}/${urls.length}] 🌐 Processando: ${title || link}`, 'info');
-      log(`   ↳ ${link}`, 'muted');
+      log(`[${idx}/${items.length}] 🌐 Processando: ${nomePreview}`, 'info');
+
+      // Mostra telefone e site quando disponíveis (dados já vindos do Maps)
+      if (item.place?.telefone) {
+        log(`   ↳ 📞 ${item.place.telefone}`, 'muted');
+      }
+      if (item.place?.site) {
+        log(`   ↳ 🌍 ${item.place.site}`, 'muted');
+      } else {
+        log(`   ↳ (sem site cadastrado no Maps)`, 'muted');
+      }
 
       try {
-        const result = await callProcessLead(link, query);
+        const result = await callProcessLead(item, query);
 
         if (result.success) {
           ok++;
           const nome = result.lead?.nome_empresa || 'sem nome';
+          const emailInfo = result.lead?.email
+            ? ` · e-mail: ${result.lead.email}`
+            : '';
           log(
-            `   ↳ ✅ Card criado: "${nome}" → ${result.trello?.url || 'Trello'}`,
+            `   ↳ ✅ Card criado: "${nome}"${emailInfo} → ${result.trello?.url || 'Trello'}`,
             'success'
           );
         } else {
@@ -159,13 +177,16 @@
         log(`   ↳ ❌ Erro: ${err.message}`, 'error');
       }
 
-      setProgress(idx, urls.length, 'Processando fila de leads…');
+      setProgress(idx, items.length, 'Processando fila de leads…');
     }
 
     const elapsed = Date.now() - startedAt;
-    setProgress(urls.length, urls.length, 'Concluído ✓');
+    setProgress(items.length, items.length, 'Concluído ✓');
 
-    log(`🏁 Finalizado. ${ok} sucesso(s), ${fail} falha(s) em ${fmtElapsed(elapsed)}.`, 'success');
+    log(
+      `🏁 Finalizado. ${ok} sucesso(s), ${fail} falha(s) em ${fmtElapsed(elapsed)}.`,
+      'success'
+    );
 
     // Resumo
     sumOk.textContent = ok;
