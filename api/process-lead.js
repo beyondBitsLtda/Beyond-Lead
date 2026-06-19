@@ -1,5 +1,6 @@
 // /api/process-lead.js
-// Versão com limpeza de URL + Referer + Wikipedia filtrada.
+// Recebe dados ricos do Google Maps + opcionalmente faz scrape do site para
+// enriquecer com e-mail. Cria card no Trello.
 
 import axios from 'axios';
 import * as cheerio from 'cheerio';
@@ -7,41 +8,12 @@ import https from 'https';
 
 const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
-// Domínios filtrados antes do scraping (redes sociais + Wikipedia + Google)
-const BLOCKED_DOMAINS = [
-  'instagram.com',
-  'facebook.com',
-  'linkedin.com',
-  'twitter.com',
-  'x.com',
-  'tiktok.com',
-  'youtube.com',
-  'pinterest.com',
-  'wa.me',
-  'whatsapp.com',
-  'wikipedia.org',
-  'google.com',
-  'google.com.br',
-  'maps.google.com'
-];
-
-// Parâmetros de tracking que quebram a URL — sempre removemos antes de acessar
-const TRACKING_PARAMS = [
-  'srsltid', 'gclid', 'fbclid', 'msclkid',
-  'utm_source', 'utm_medium', 'utm_campaign',
-  'utm_term', 'utm_content', 'ref', 'source'
-];
-
 const BROWSER_HEADERS = {
   'User-Agent':
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
     '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  Accept:
-    'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-  'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-  'Accept-Encoding': 'gzip, deflate, br',
-  Connection: 'keep-alive',
-  'Upgrade-Insecure-Requests': '1',
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'pt-BR,pt;q=0.9',
   Referer: 'https://www.google.com/'
 };
 
@@ -51,42 +23,47 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Método não permitido. Use POST.' });
   }
 
-  const { url, query } = req.body || {};
+  const { url, query, place } = req.body || {};
 
-  if (!url || !isValidUrl(url)) {
-    return res.status(400).json({ error: 'Parâmetro "url" inválido ou ausente.' });
-  }
-
-  if (isBlockedDomain(url)) {
-    return res.status(200).json({
-      success: false,
-      url,
-      stage: 'filter',
-      reason: 'Domínio filtrado (rede social, Wikipedia ou bot-protegido).'
+  // Se não tem dados do place, falha (estrutura nova)
+  if (!place || !place.nome) {
+    return res.status(400).json({
+      error: 'Dados do place ausentes. Reenvie com o campo "place" preenchido.'
     });
   }
 
-  // Limpa parâmetros de tracking ANTES de qualquer requisição
-  const cleanedUrl = cleanUrl(url);
-
   try {
-    const cleanText = await scrapeSite(cleanedUrl);
+    // Dados básicos já vêm do Google Maps
+    const lead = {
+      nome_empresa: place.nome,
+      email: null,
+      telefone: place.telefone || null,
+      endereco: place.endereco || null,
+      nicho: place.categoria || null,
+      site: place.site || null,
+      rating: place.rating || null,
+      reviews: place.reviews || null,
+      resumo: null
+    };
 
-    if (!cleanText || cleanText.length < 80) {
-      return res.status(200).json({
-        success: false,
-        url: cleanedUrl,
-        stage: 'scrape',
-        reason: 'Conteúdo insuficiente extraído do site.'
-      });
+    // Se tem site, tenta enriquecer com e-mail e resumo (sem bloquear se falhar)
+    if (place.site) {
+      try {
+        const cleanText = await scrapeSite(place.site);
+        if (cleanText && cleanText.length > 80) {
+          const enrich = await extractEmailAndSummary(cleanText, place.site);
+          lead.email = enrich.email || null;
+          lead.resumo = enrich.resumo || null;
+        }
+      } catch {
+        // Scrape falhou? Sem problema, segue com os dados do Maps.
+      }
     }
 
-    const lead = await extractWithGemini(cleanText, cleanedUrl);
-    const card = await createTrelloCard(lead, cleanedUrl, query);
+    const card = await createTrelloCard(lead, query);
 
     return res.status(200).json({
       success: true,
-      url: cleanedUrl,
       lead,
       trello: {
         id: card.id,
@@ -95,10 +72,9 @@ export default async function handler(req, res) {
       }
     });
   } catch (error) {
-    console.error(`[/api/process-lead] erro em ${cleanedUrl}:`, error.message);
+    console.error(`[/api/process-lead] erro:`, error.message);
     return res.status(200).json({
       success: false,
-      url: cleanedUrl,
       error: error.message || 'Erro desconhecido ao processar lead.'
     });
   }
@@ -106,7 +82,7 @@ export default async function handler(req, res) {
 
 async function scrapeSite(url) {
   const response = await axios.get(url, {
-    timeout: 20000,
+    timeout: 12000,
     maxRedirects: 5,
     httpsAgent,
     headers: BROWSER_HEADERS,
@@ -114,38 +90,25 @@ async function scrapeSite(url) {
   });
 
   const $ = cheerio.load(response.data);
-  $(
-    'script, style, noscript, iframe, svg, img, link, meta, ' +
-      'header nav, footer, .cookie, .cookies, .modal, .popup, ' +
-      '[class*="banner"], [class*="advert"]'
-  ).remove();
-
+  $('script, style, noscript, iframe, svg, img, link, meta').remove();
   let text = $('body').text().replace(/\s+/g, ' ').trim();
-  if (text.length > 8000) text = text.slice(0, 8000);
+  if (text.length > 6000) text = text.slice(0, 6000);
   return text;
 }
 
-async function extractWithGemini(text, url) {
+async function extractEmailAndSummary(text, url) {
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY não configurada.');
+  if (!apiKey) return { email: null, resumo: null };
 
   const endpoint =
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
   const prompt = [
-    'Você é um assistente de extração de dados para prospecção comercial B2B.',
-    `A seguir está o texto bruto extraído do site ${url}.`,
-    'Identifique as informações abaixo e responda EXCLUSIVAMENTE com um JSON válido,',
-    'sem markdown, sem comentários, sem texto antes ou depois.',
+    `Extraia do texto abaixo (site ${url}) APENAS:`,
+    '- email (primeiro e-mail comercial encontrado, ou null)',
+    '- resumo (descrição de 1-2 frases do que a empresa faz, ou null)',
     '',
-    'Campos:',
-    '- nome_empresa (string|null)',
-    '- email (string|null)',
-    '- telefone (string|null) no formato (XX) XXXXX-XXXX se possível',
-    '- nicho (string|null) em uma frase curta',
-    '- resumo (string|null) de 1-2 frases',
-    '',
-    'Use null quando não estiver claro. Não invente dados.',
+    'Responda APENAS um JSON: {"email":"...","resumo":"..."}',
     '',
     'Texto:',
     '"""',
@@ -153,40 +116,25 @@ async function extractWithGemini(text, url) {
     '"""'
   ].join('\n');
 
-  const response = await axios.post(
-    endpoint,
-    {
+  try {
+    const response = await axios.post(endpoint, {
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
         temperature: 0.2,
-        maxOutputTokens: 600,
+        maxOutputTokens: 300,
         responseMimeType: 'application/json'
       }
-    },
-    { timeout: 30000, headers: { 'Content-Type': 'application/json' } }
-  );
+    }, { timeout: 20000, headers: { 'Content-Type': 'application/json' } });
 
-  const raw = response.data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
-  if (!raw) throw new Error('Gemini retornou resposta vazia.');
-
-  const cleaned = raw.replace(/^```json\s*/i, '').replace(/```$/g, '').trim();
-  let parsed;
-  try {
-    parsed = JSON.parse(cleaned);
+    const raw = response.data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+    const cleaned = raw.replace(/^```json\s*/i, '').replace(/```$/g, '').trim();
+    return JSON.parse(cleaned);
   } catch {
-    throw new Error('JSON inválido do Gemini: ' + cleaned.slice(0, 120));
+    return { email: null, resumo: null };
   }
-
-  return {
-    nome_empresa: parsed.nome_empresa || null,
-    email: parsed.email || null,
-    telefone: parsed.telefone || null,
-    nicho: parsed.nicho || null,
-    resumo: parsed.resumo || null
-  };
 }
 
-async function createTrelloCard(lead, url, query) {
+async function createTrelloCard(lead, query) {
   const apiKey = process.env.TRELLO_API_KEY;
   const token = process.env.TRELLO_TOKEN;
   const listId = process.env.TRELLO_LIST_ID;
@@ -195,55 +143,32 @@ async function createTrelloCard(lead, url, query) {
     throw new Error('Credenciais do Trello não configuradas.');
   }
 
-  const cardName = lead.nome_empresa || safeHostname(url);
   const desc = [
     `**Nicho:** ${lead.nicho || '—'}`,
-    `**E-mail:** ${lead.email || '—'}`,
     `**Telefone:** ${lead.telefone || '—'}`,
-    `**Site:** ${url}`,
+    `**E-mail:** ${lead.email || '—'}`,
+    `**Endereço:** ${lead.endereco || '—'}`,
+    `**Site:** ${lead.site || '—'}`,
+    lead.rating ? `**Avaliação Google:** ⭐ ${lead.rating} (${lead.reviews || 0} reviews)` : '',
     '',
-    `**Resumo:**`,
-    lead.resumo || '—',
+    lead.resumo ? `**Resumo:**\n${lead.resumo}` : '',
     '',
     `---`,
     `**Termo de busca:** ${query || '—'}`,
     `**Prospectado em:** ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 
   const response = await axios.post('https://api.trello.com/1/cards', null, {
-    params: { key: apiKey, token, idList: listId, name: cardName, desc, pos: 'bottom' },
+    params: {
+      key: apiKey,
+      token,
+      idList: listId,
+      name: lead.nome_empresa,
+      desc,
+      pos: 'bottom'
+    },
     timeout: 10000
   });
 
   return response.data;
-}
-
-function isValidUrl(value) {
-  try {
-    const u = new URL(value);
-    return u.protocol === 'http:' || u.protocol === 'https:';
-  } catch { return false; }
-}
-
-function isBlockedDomain(url) {
-  try {
-    const hostname = new URL(url).hostname.toLowerCase();
-    return BLOCKED_DOMAINS.some((d) => hostname.includes(d));
-  } catch { return false; }
-}
-
-function cleanUrl(url) {
-  try {
-    const u = new URL(url);
-    TRACKING_PARAMS.forEach((p) => u.searchParams.delete(p));
-    return u.toString();
-  } catch {
-    return url;
-  }
-}
-
-function safeHostname(url) {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '');
-  } catch { return url; }
 }
