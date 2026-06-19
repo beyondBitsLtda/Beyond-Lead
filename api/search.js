@@ -1,6 +1,6 @@
 // /api/search.js
-// Recebe um termo de busca e devolve até 10 URLs via Serper.dev (proxy do Google).
-// Substitui a antiga Google Custom Search API (fechada para novos clientes).
+// Busca no Google Maps via Serper Places API.
+// Retorna negócios com nome, telefone, endereço e site já prontos.
 
 import axios from 'axios';
 
@@ -19,21 +19,17 @@ export default async function handler(req, res) {
   }
 
   const apiKey = process.env.SERPER_API_KEY;
-
   if (!apiKey) {
-    return res.status(500).json({
-      error: 'Variável SERPER_API_KEY não configurada.'
-    });
+    return res.status(500).json({ error: 'SERPER_API_KEY não configurada.' });
   }
 
   try {
     const response = await axios.post(
-      'https://google.serper.dev/search',
+      'https://google.serper.dev/places',
       {
         q: query.trim(),
-        gl: 'br',         // Brasil
-        hl: 'pt-br',      // Português do Brasil
-        num: 10
+        gl: 'br',
+        hl: 'pt-br'
       },
       {
         headers: {
@@ -44,13 +40,25 @@ export default async function handler(req, res) {
       }
     );
 
-    const organic = response.data?.organic || [];
+    const places = response.data?.places || [];
 
-    // Normaliza saída no mesmo formato que o frontend já espera
-    const results = organic.slice(0, 10).map((item) => ({
-      title: item.title,
-      link: item.link,
-      snippet: item.snippet || ''
+    // Normaliza pro frontend: o "lead" já vem rico, não precisa scrape
+    const results = places.slice(0, 10).map((p) => ({
+      title: p.title,
+      link: p.website || p.cid ? `https://www.google.com/maps/place/?q=place_id:${p.placeId}` : '',
+      snippet: p.address || '',
+      // Dados ricos do Google Maps — vão direto pro Trello
+      place: {
+        nome: p.title,
+        endereco: p.address || null,
+        telefone: p.phoneNumber || null,
+        site: p.website || null,
+        categoria: p.category || null,
+        rating: p.rating || null,
+        reviews: p.ratingCount || null,
+        latitude: p.latitude || null,
+        longitude: p.longitude || null
+      }
     }));
 
     return res.status(200).json({
@@ -61,15 +69,12 @@ export default async function handler(req, res) {
     });
   } catch (error) {
     const apiError =
-      error.response?.data?.message ||
-      error.message ||
-      'Erro desconhecido ao consultar Serper.';
-
+      error.response?.data?.message || error.message || 'Erro desconhecido.';
     console.error('[/api/search] erro:', apiError);
 
     return res.status(502).json({
       success: false,
-      error: 'Falha ao consultar a Serper Search.',
+      error: 'Falha ao consultar a Serper Places.',
       details: apiError
     });
   }
