@@ -16,86 +16,144 @@
         </p>
       </header>
 
-      <section class="card">
-        <form id="search-form" autocomplete="off">
-          <label for="query">Termo de busca</label>
-          <input
-            type="text"
-            id="query"
-            name="query"
-            placeholder="Ex: Clínicas de estética em São Paulo"
-            required
-            minlength="3"
-          />
+      <!-- Abas de navegação -->
+      <nav class="tabs">
+        <button class="tab-btn active" data-tab="prospect">🔎 Prospecção</button>
+        <button class="tab-btn" data-tab="chat">💬 Estratégia (IA)</button>
+      </nav>
 
-          <div class="form-row">
-            <div class="form-group">
-              <label for="limit">Quantidade de leads</label>
-              <select id="limit" name="limit">
-                <option value="5">5 leads</option>
-                <option value="10" selected>10 leads</option>
-                <option value="20">20 leads</option>
-              </select>
+      <!-- ABA 1: Prospecção -->
+      <div class="tab-content active" id="tab-prospect">
+        <section class="card">
+          <form id="search-form" autocomplete="off">
+            <label for="query">Termo de busca</label>
+            <input
+              type="text"
+              id="query"
+              name="query"
+              placeholder="Ex: Clínicas de estética em São Paulo"
+              required
+              minlength="3"
+            />
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="limit">Quantidade de leads</label>
+                <select id="limit" name="limit">
+                  <option value="5">5 leads</option>
+                  <option value="10" selected>10 leads</option>
+                  <option value="20">20 leads</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="min-rating">Rating mínimo no Google</label>
+                <select id="min-rating" name="min-rating">
+                  <option value="0" selected>Qualquer um</option>
+                  <option value="3">⭐ 3.0+</option>
+                  <option value="4">⭐ 4.0+</option>
+                  <option value="4.5">⭐ 4.5+</option>
+                </select>
+              </div>
             </div>
 
-            <div class="form-group">
-              <label for="min-rating">Rating mínimo no Google</label>
-              <select id="min-rating" name="min-rating">
-                <option value="0" selected>Qualquer um</option>
-                <option value="3">⭐ 3.0+</option>
-                <option value="4">⭐ 4.0+</option>
-                <option value="4.5">⭐ 4.5+</option>
-              </select>
+            <div class="filters">
+              <label class="checkbox-label">
+                <input type="checkbox" id="require-phone" />
+                <span>Só leads com telefone</span>
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" id="require-website" />
+                <span>Só leads com site</span>
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" id="dedup" checked />
+                <span>Evitar duplicados no Trello</span>
+              </label>
+            </div>
+
+            <button type="submit" id="start-btn">Iniciar Prospecção</button>
+          </form>
+
+          <div class="progress" id="progress" hidden>
+            <div class="progress-info">
+              <span id="progress-label">Aguardando início…</span>
+              <span id="progress-count">0 / 0</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-bar-fill" id="progress-fill"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="log-header">
+            <h2>Log de Atividades</h2>
+            <button type="button" id="clear-log" class="ghost">Limpar</button>
+          </div>
+          <div id="log" class="log" aria-live="polite">
+            <div class="log-empty">Nada por aqui ainda. Inicie uma busca para ver o andamento.</div>
+          </div>
+
+          <div class="summary" id="summary" hidden>
+            <h3>Resumo final</h3>
+            <ul>
+              <li>✅ Cadastrados: <strong id="sum-ok">0</strong></li>
+              <li>⚠️ Falhas/Duplicados: <strong id="sum-fail">0</strong></li>
+              <li>⏱️ Tempo total: <strong id="sum-time">—</strong></li>
+            </ul>
+          </div>
+        </section>
+      </div>
+
+      <!-- ABA 2: Chat de estratégia -->
+      <div class="tab-content" id="tab-chat">
+        <section class="card">
+          <h2 class="chat-title">💬 Consultor de Estratégia</h2>
+          <p class="chat-subtitle">
+            Converse com o Gemini sobre como abordar seus leads, redigir mensagens,
+            escolher canais, ou criar estratégias de prospecção.
+          </p>
+
+          <div class="chat-suggestions" id="chat-suggestions">
+            <button class="suggestion" data-prompt="Quais são os melhores canais para abordar uma clínica de estética em primeiro contato?">
+              💡 Melhor canal para clínicas
+            </button>
+            <button class="suggestion" data-prompt="Me ajude a escrever uma mensagem de WhatsApp para apresentar meu serviço para um petshop. Eu vendo um sistema de gestão.">
+              ✍️ Mensagem para petshop
+            </button>
+            <button class="suggestion" data-prompt="Como posso aumentar minha taxa de resposta em prospecção fria por e-mail?">
+              📈 Aumentar taxa de resposta
+            </button>
+            <button class="suggestion" data-prompt="Quais perguntas devo fazer no primeiro contato para qualificar um lead?">
+              ❓ Perguntas de qualificação
+            </button>
+          </div>
+
+          <div class="chat-window" id="chat-window">
+            <div class="chat-empty">
+              👋 Olá! Sou seu consultor de prospecção. Como posso ajudar hoje?
+              <br><br>
+              Você pode me perguntar sobre estratégias, pedir para redigir mensagens,
+              ou colar dados de um lead para receber sugestões personalizadas.
             </div>
           </div>
 
-          <div class="filters">
-            <label class="checkbox-label">
-              <input type="checkbox" id="require-phone" />
-              <span>Só leads com telefone</span>
-            </label>
-            <label class="checkbox-label">
-              <input type="checkbox" id="require-website" />
-              <span>Só leads com site</span>
-            </label>
-            <label class="checkbox-label">
-              <input type="checkbox" id="dedup" checked />
-              <span>Evitar duplicados no Trello</span>
-            </label>
-          </div>
+          <form id="chat-form" class="chat-form">
+            <textarea
+              id="chat-input"
+              placeholder="Digite sua pergunta ou cole os dados de um lead..."
+              rows="2"
+              required
+            ></textarea>
+            <button type="submit" id="chat-send">Enviar</button>
+          </form>
 
-          <button type="submit" id="start-btn">Iniciar Prospecção</button>
-        </form>
-
-        <div class="progress" id="progress" hidden>
-          <div class="progress-info">
-            <span id="progress-label">Aguardando início…</span>
-            <span id="progress-count">0 / 0</span>
-          </div>
-          <div class="progress-bar">
-            <div class="progress-bar-fill" id="progress-fill"></div>
-          </div>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="log-header">
-          <h2>Log de Atividades</h2>
-          <button type="button" id="clear-log" class="ghost">Limpar</button>
-        </div>
-        <div id="log" class="log" aria-live="polite">
-          <div class="log-empty">Nada por aqui ainda. Inicie uma busca para ver o andamento.</div>
-        </div>
-
-        <div class="summary" id="summary" hidden>
-          <h3>Resumo final</h3>
-          <ul>
-            <li>✅ Cadastrados: <strong id="sum-ok">0</strong></li>
-            <li>⚠️ Falhas/Duplicados: <strong id="sum-fail">0</strong></li>
-            <li>⏱️ Tempo total: <strong id="sum-time">—</strong></li>
-          </ul>
-        </div>
-      </section>
+          <button type="button" id="chat-clear" class="ghost chat-clear-btn">
+            Limpar conversa
+          </button>
+        </section>
+      </div>
 
       <footer class="footer">
         <small>
