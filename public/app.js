@@ -30,7 +30,33 @@
   const refreshBtn = $('#refresh-btn');
   refreshBtn.addEventListener('click', loadDashboard);
 
+  const monthSelect = $('#month-select');
+  const revenueScopeBtn = $('#revenue-scope');
+
+  const MONTH_KEY_STORAGE = 'prospect_leads_month_v1';
+
   let dashState = null;
+  let selectedMonthKey = null;
+  let showAllMonths = false;
+
+  monthSelect.addEventListener('change', () => {
+    selectedMonthKey = monthSelect.value;
+    localStorage.setItem(MONTH_KEY_STORAGE, selectedMonthKey);
+    if (dashState) renderMonthScoped(dashState);
+  });
+
+  revenueScopeBtn.addEventListener('click', () => {
+    showAllMonths = !showAllMonths;
+    revenueScopeBtn.textContent = showAllMonths ? 'Ver últimos 6 meses' : 'Ver todos os meses';
+    if (dashState) renderRevenue(dashState);
+  });
+
+  function getMonths() { return (dashState && dashState.months) || []; }
+
+  function getSelectedMonth() {
+    const months = getMonths();
+    return months.find((m) => m.key === selectedMonthKey) || null;
+  }
 
   async function loadDashboard() {
     refreshBtn.disabled = true;
@@ -54,12 +80,16 @@
   }
 
   function renderDashboard(d) {
-    // KPIs
+    // Seletor de meses
+    syncMonthSelect(d);
+
+    // KPIs que não dependem do mês
     $('#kpi-funil').textContent = fmtNum(d.totals.emFunil);
     $('#kpi-abordagem').textContent = fmtNum(d.totals.abordagem);
     $('#kpi-fechados').textContent = fmtNum(d.totals.fechado);
-    $('#kpi-mes').textContent = fmtBRL(d.revenue.currentMonth);
-    $('#kpi-mes-hint').textContent = `Ano: ${fmtBRL(d.revenue.currentYear)}`;
+    $('#kpi-total').textContent = fmtBRL(d.revenue.allTimeFechado);
+    $('#kpi-total-hint').textContent =
+      `${d.months.length} mês(es) · Ano ${new Date().getFullYear()}: ${fmtBRL(d.revenue.currentYear)}`;
 
     // Funil
     renderFunnel(d.totals);
@@ -70,13 +100,6 @@
     // Meta da semana
     renderMeta(d.metaSemana);
 
-    // Meta mensal (faturamento)
-    renderMetaMensal(d.metaMensal);
-
-    // Faturamento mensal
-    renderRevenue(d.revenue.monthlySeries);
-    $('#revenue-total').textContent = fmtBRL(d.revenue.allTimeFechado);
-
     // Etiquetas
     renderLabels(d.byLabel);
 
@@ -85,6 +108,78 @@
 
     // Abordagem HOJE
     renderToday(d.abordagemHoje);
+
+    // Tudo que depende do mês escolhido
+    renderMonthScoped(d);
+  }
+
+  // Preenche o <select> de meses e define o mês ativo
+  function syncMonthSelect(d) {
+    const months = (d.months || []).slice().reverse(); // mais recente primeiro
+
+    const saved = localStorage.getItem(MONTH_KEY_STORAGE);
+    const exists = (k) => months.some((m) => m.key === k);
+
+    if (!exists(selectedMonthKey)) selectedMonthKey = null;
+    if (!selectedMonthKey && saved && exists(saved)) selectedMonthKey = saved;
+    if (!selectedMonthKey && exists(d.revenue.currentMonthKey)) {
+      selectedMonthKey = d.revenue.currentMonthKey;
+    }
+    if (!selectedMonthKey && months.length) selectedMonthKey = months[0].key;
+
+    monthSelect.innerHTML = months.map((m) => {
+      const tag = m.isCurrent ? ' (atual)' : '';
+      return `<option value="${m.key}">${escapeHtml(m.labelLong)}${tag} — ${fmtBRL(m.revenue)}</option>`;
+    }).join('');
+    if (selectedMonthKey) monthSelect.value = selectedMonthKey;
+  }
+
+  // Redesenha só o que muda quando o mês muda
+  function renderMonthScoped(d) {
+    const m = getSelectedMonth();
+
+    // KPI do mês
+    $('#kpi-mes-label').textContent = m ? `Faturamento — ${m.labelLong}` : 'Faturamento do mês';
+    $('#kpi-mes').textContent = fmtBRL(m ? m.revenue : 0);
+    $('#kpi-mes-hint').textContent = m
+      ? `${m.count} serviço(s) fechado(s)`
+      : 'Sem dados para este mês';
+
+    renderMetaMensal(m);
+    renderRevenue(d);
+    renderMonthDetail(m);
+  }
+
+  function renderMonthDetail(m) {
+    const el = $('#month-detail');
+    $('#month-detail-title').textContent = m ? `Detalhe — ${m.labelLong}` : 'Detalhe do mês';
+    $('#month-detail-total').textContent = m ? fmtBRL(m.revenue) : '—';
+
+    if (!m || m.cards.length === 0) {
+      el.innerHTML = '<div class="empty">Nenhum serviço fechado com valor neste mês.</div>';
+      return;
+    }
+
+    el.innerHTML = m.cards.map((c) => {
+      const items = (c.items || []).length > 1
+        ? `<ul class="month-items">${c.items.map((i) =>
+            `<li><span>${escapeHtml(i.label)}</span><strong>${fmtBRL(i.value)}</strong></li>`).join('')}</ul>`
+        : '';
+      const labels = (c.labels || []).length
+        ? `<div class="month-card-labels">${c.labels.map((l) =>
+            `<span>${escapeHtml(l)}</span>`).join('')}</div>`
+        : '';
+      return `
+        <div class="month-card">
+          <div class="month-card-top">
+            <a class="month-card-name" href="${c.url}" target="_blank" rel="noopener">${escapeHtml(c.name)}</a>
+            <span class="month-card-value">${fmtBRL(c.value)}</span>
+          </div>
+          ${labels}
+          ${items}
+        </div>
+      `;
+    }).join('');
   }
 
   function renderFunnel(t) {
@@ -128,17 +223,30 @@
     `;
   }
 
-  function renderMetaMensal(meta) {
+  function renderMetaMensal(m) {
     const el = $('#meta-mensal-widget');
     const pctTag = $('#meta-mensal-pct');
-    if (!meta || meta.target === 0) {
-      el.innerHTML = '<div class="meta-empty">Sem meta mensal cadastrada.<br><small>Crie um card "Meta Mensal" na coluna Metas com um item de checklist tipo "Fechar Serviços de R$ 5.000".</small></div>';
+    const monthBadge = $('#meta-mensal-month');
+
+    monthBadge.textContent = m ? m.labelLong : '—';
+
+    if (!m || !m.target) {
+      el.innerHTML = '<div class="meta-empty">Sem meta cadastrada para este mês.<br><small>Crie um card "Meta Mensal" na coluna Metas (vale pra todos os meses) ou "Meta de Agosto" para um mês específico, com um item de checklist tipo "Fechar Serviços de R$ 5.000".</small></div>';
       pctTag.textContent = '—';
+      pctTag.style.background = '';
+      pctTag.style.color = '';
+      pctTag.style.borderColor = '';
       return;
     }
+
+    const meta = {
+      target: m.target,
+      current: m.revenue,
+      pct: Math.min(100, m.pct)
+    };
     const remain = Math.max(0, meta.target - meta.current);
-    const isComplete = meta.pct >= 100;
-    pctTag.textContent = `${meta.pct}%`;
+    const isComplete = m.pct >= 100;
+    pctTag.textContent = `${m.pct}%`;
     pctTag.style.background = isComplete ? 'rgba(74, 222, 128, 0.15)' : 'rgba(251, 191, 36, 0.12)';
     pctTag.style.color = isComplete ? 'var(--success)' : '#facc15';
     pctTag.style.borderColor = isComplete ? 'rgba(74, 222, 128, 0.3)' : 'rgba(251, 191, 36, 0.3)';
@@ -156,18 +264,37 @@
           ? `🎉 Meta batida! Excedeu em ${fmtBRL(meta.current - meta.target)}.`
           : `Faltam ${fmtBRL(remain)} para bater a meta.`}
       </div>
+      <div class="meta-mensal-source">
+        ${m.hasOwnTarget ? 'Meta específica deste mês.' : 'Usando a meta mensal padrão.'}
+      </div>
     `;
   }
 
-  function renderRevenue(series) {
+  function renderRevenue(d) {
+    const series = showAllMonths
+      ? (d.months || []).map((m) => ({ key: m.key, label: m.label, value: m.revenue }))
+      : (d.revenue.monthlySeries || []);
+
+    const total = series.reduce((a, s) => a + s.value, 0);
+    $('#revenue-total').textContent = showAllMonths
+      ? `Total ${fmtBRL(d.revenue.allTimeFechado)}`
+      : `6 meses ${fmtBRL(total)}`;
+
     const max = Math.max(...series.map((s) => s.value), 1);
     const el = $('#revenue-chart');
+
+    if (series.length === 0) {
+      el.innerHTML = '<div class="empty">Sem faturamento registrado.</div>';
+      return;
+    }
+
     el.innerHTML = series.map((s) => {
       const h = (s.value / max) * 100;
+      const active = s.key === selectedMonthKey ? ' active' : '';
       return `
-        <div class="chart-bar-col">
+        <div class="chart-bar-col${active}" data-month="${s.key || ''}" role="button" tabindex="0">
           <div class="chart-bar-wrap">
-            <div class="chart-bar" style="height:${h}%">
+            <div class="chart-bar${active}" style="height:${h}%">
               ${s.value > 0 ? `<span class="chart-bar-value">${fmtBRL(s.value)}</span>` : ''}
             </div>
           </div>
@@ -175,6 +302,20 @@
         </div>
       `;
     }).join('');
+
+    el.querySelectorAll('.chart-bar-col').forEach((col) => {
+      const key = col.dataset.month;
+      if (!key) return;
+      const pick = () => {
+        if (!getMonths().some((m) => m.key === key)) return;
+        selectedMonthKey = key;
+        localStorage.setItem(MONTH_KEY_STORAGE, key);
+        monthSelect.value = key;
+        renderMonthScoped(dashState);
+      };
+      col.addEventListener('click', pick);
+      col.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
+    });
   }
 
   function renderWeekly(series) {

@@ -158,7 +158,7 @@ html, body {
    KPIs
    ============================================================ */
 .grid-kpi {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px;
   margin-bottom: 18px;
 }
 .kpi {
@@ -189,6 +189,7 @@ html, body {
 
 .kpi-accent .kpi-value { color: var(--pink); text-shadow: 0 0 24px rgba(240, 171, 252, 0.5); }
 .kpi-success .kpi-value { color: var(--success); text-shadow: 0 0 20px rgba(74, 222, 128, 0.4); }
+.kpi-total .kpi-value { color: var(--info); text-shadow: 0 0 20px rgba(96, 165, 250, 0.45); font-size: 1.7rem; }
 .kpi-money .kpi-value { color: #fef08a; text-shadow: 0 0 20px rgba(251, 191, 36, 0.4); font-size: 1.7rem; }
 
 /* ============================================================
@@ -205,6 +206,7 @@ html, body {
 .panel-meta-mensal { grid-column: 2; grid-row: 2; }
 .panel-labels      { grid-column: 2; grid-row: 3; }
 .panel-revenue     { grid-column: 1 / -1; }
+.panel-month       { grid-column: 1 / -1; }
 .panel-weekly      { grid-column: 1 / -1; }
 
 /* Meta mensal — faturamento */
@@ -552,15 +554,103 @@ textarea { resize: vertical; min-height: 80px; font-family: inherit; }
 }
 .send-target strong { color: var(--pink); font-family: var(--font-display); }
 
+
+/* ============================================================
+   Seletor de mês + detalhe do mês
+   ============================================================ */
+.dash-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.month-picker {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 6px 4px 12px;
+  background: rgba(23, 16, 42, 0.7);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.month-picker label {
+  margin: 0; font-size: 0.72rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.12em;
+  color: var(--text-dim);
+}
+.month-picker select {
+  background: transparent; border: none; outline: none;
+  color: var(--text); font-family: var(--font-display);
+  font-size: 0.88rem; font-weight: 600;
+  padding: 6px 4px; cursor: pointer;
+  max-width: 260px;
+}
+.month-picker select option { background: var(--panel); color: var(--text); }
+
+.panel-head-actions { display: flex; align-items: center; gap: 8px; }
+
+.panel-month-badge {
+  display: inline-block; margin: -6px 0 10px;
+  font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.12em;
+  color: var(--text-dim); font-weight: 600;
+}
+
+.meta-mensal-source {
+  margin-top: 8px; font-size: 0.7rem; color: var(--text-dim);
+  font-style: italic;
+}
+
+/* barras clicáveis */
+.chart-bar-col[data-month] { cursor: pointer; border-radius: 8px; transition: background 0.15s; }
+.chart-bar-col[data-month]:hover { background: rgba(192, 132, 252, 0.07); }
+.chart-bar-col.active .chart-bar-label { color: var(--pink); font-weight: 700; }
+.chart-bar.active {
+  background: linear-gradient(180deg, #fef08a, #f59e0b);
+  box-shadow: 0 0 20px rgba(251, 191, 36, 0.55);
+}
+
+/* lista de serviços do mês */
+.month-detail {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.month-card {
+  background: rgba(10, 6, 22, 0.45);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+}
+.month-card-top {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+}
+.month-card-name {
+  color: var(--text); font-weight: 600; font-size: 0.9rem;
+  text-decoration: none; font-family: var(--font-display);
+}
+.month-card-name:hover { color: var(--pink); text-decoration: underline; }
+.month-card-value {
+  font-family: var(--font-display); font-weight: 700; font-size: 0.95rem;
+  color: var(--success); white-space: nowrap;
+}
+.month-card-labels { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.month-card-labels span {
+  font-size: 0.66rem; padding: 2px 7px; border-radius: 999px;
+  background: rgba(192, 132, 252, 0.12);
+  border: 1px solid rgba(192, 132, 252, 0.25);
+  color: var(--text-2);
+}
+.month-items { list-style: none; margin: 10px 0 0; padding: 8px 0 0; border-top: 1px dashed var(--border); }
+.month-items li {
+  display: flex; justify-content: space-between; gap: 10px;
+  font-size: 0.76rem; color: var(--text-2); padding: 3px 0;
+}
+.month-items strong { color: var(--text); font-family: var(--font-display); white-space: nowrap; }
+
 /* ============================================================
    Responsivo
    ============================================================ */
 @media (max-width: 900px) {
   .grid-kpi { grid-template-columns: repeat(2, 1fr); }
   .grid-dash { grid-template-columns: 1fr; }
-  .panel-funnel, .panel-meta, .panel-meta-mensal, .panel-labels, .panel-revenue, .panel-weekly {
+  .panel-funnel, .panel-meta, .panel-meta-mensal, .panel-labels,
+  .panel-revenue, .panel-month, .panel-weekly {
     grid-column: 1; grid-row: auto;
   }
+  .grid-kpi { grid-template-columns: repeat(2, 1fr); }
   .funnel-label { width: 100px; font-size: 0.75rem; }
 }
 

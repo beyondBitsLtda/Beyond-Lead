@@ -37,7 +37,13 @@
             <h1 class="dash-title">Central de Operação</h1>
             <p class="dash-sub" id="last-update">Sincronizando com o Trello…</p>
           </div>
-          <button class="btn-ghost" id="refresh-btn">↻ Atualizar</button>
+          <div class="dash-controls">
+            <div class="month-picker">
+              <label for="month-select">Mês</label>
+              <select id="month-select"></select>
+            </div>
+            <button class="btn-ghost" id="refresh-btn">↻ Atualizar</button>
+          </div>
         </div>
 
         <!-- KPIs -->
@@ -58,9 +64,14 @@
             <span class="kpi-hint">Total no board</span>
           </div>
           <div class="kpi kpi-money">
-            <span class="kpi-label">Faturamento no mês</span>
+            <span class="kpi-label" id="kpi-mes-label">Faturamento do mês</span>
             <span class="kpi-value" id="kpi-mes">—</span>
             <span class="kpi-hint" id="kpi-mes-hint">—</span>
+          </div>
+          <div class="kpi kpi-total">
+            <span class="kpi-label">Faturamento total</span>
+            <span class="kpi-value" id="kpi-total">—</span>
+            <span class="kpi-hint" id="kpi-total-hint">—</span>
           </div>
         </div>
 
@@ -91,6 +102,7 @@
               <h2>Meta de Faturamento</h2>
               <span class="panel-tag" id="meta-mensal-pct">—</span>
             </div>
+            <div class="panel-month-badge" id="meta-mensal-month">—</div>
             <div id="meta-mensal-widget" class="meta">
               <div class="meta-empty">Sem meta mensal cadastrada.</div>
             </div>
@@ -99,10 +111,25 @@
           <!-- Faturamento mensal -->
           <div class="panel panel-revenue">
             <div class="panel-head">
-              <h2>Faturamento — 6 meses</h2>
-              <span class="panel-tag" id="revenue-total">—</span>
+              <h2>Faturamento por mês</h2>
+              <div class="panel-head-actions">
+                <span class="panel-tag" id="revenue-total">—</span>
+                <button class="btn-ghost small" id="revenue-scope">Ver todos os meses</button>
+              </div>
             </div>
+            <p class="panel-sub">Clique em uma barra para filtrar o mês.</p>
             <div id="revenue-chart" class="chart-bars"></div>
+          </div>
+
+          <!-- Detalhe do mês selecionado -->
+          <div class="panel panel-month">
+            <div class="panel-head">
+              <h2 id="month-detail-title">Detalhe do mês</h2>
+              <span class="panel-tag" id="month-detail-total">—</span>
+            </div>
+            <div id="month-detail" class="month-detail">
+              <div class="empty">Selecione um mês.</div>
+            </div>
           </div>
 
           <!-- Etiquetas -->
