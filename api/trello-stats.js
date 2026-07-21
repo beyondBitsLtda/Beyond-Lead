@@ -1,8 +1,19 @@
 // /api/trello-stats.js
 // Puxa todo o board do Trello, categoriza por estágio do funil,
-// parseia valores R$, monta séries temporais e devolve tudo para o dashboard.
+// parseia valores R$, separa faturamento POR MÊS (etiqueta "MÊS DE X")
+// e devolve tudo para o dashboard.
 
 import axios from 'axios';
+
+const MONTH_NAMES = [
+  'janeiro', 'fevereiro', 'marco', 'abril', 'maio', 'junho',
+  'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'
+];
+
+const MONTH_SHORT = [
+  'jan', 'fev', 'mar', 'abr', 'mai', 'jun',
+  'jul', 'ago', 'set', 'out', 'nov', 'dez'
+];
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -55,17 +66,18 @@ export default async function handler(req, res) {
     STAGES.forEach((s) => { funnel[s] = { count: 0, revenue: 0, cards: [] }; });
 
     const byLabel = {};
-    const revenueByMonth = {};
     const cardsByWeek = {};
 
-    const now = new Date();
-    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const currentYear = now.getFullYear();
+    // mapa mestre de meses: key "YYYY-MM" -> { revenue, count, cards[] }
+    const monthBuckets = {};
 
-    let revenueCurrentMonth = 0;
-    let revenueCurrentYear = 0;
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonthKey = ymKey(currentYear, now.getMonth());
 
     const abordagemHoje = [];
+    let revenueTotal = 0;
+    let revenueSemMes = 0; // fechados sem etiqueta de mês e sem data
 
     for (const card of cards) {
       const meta = listStage[card.idList];
@@ -74,9 +86,11 @@ export default async function handler(req, res) {
       const stage = meta.stage;
       if (stage === 'metas') continue;
 
-      (card.idLabels || []).forEach((lid) => {
-        const l = labelMap[lid];
-        if (!l || !l.name) return;
+      const cardLabels = (card.idLabels || [])
+        .map((lid) => labelMap[lid])
+        .filter((l) => l && l.name);
+
+      cardLabels.forEach((l) => {
         byLabel[l.name] = (byLabel[l.name] || 0) + 1;
       });
 
@@ -87,15 +101,29 @@ export default async function handler(req, res) {
         funnel[stage].revenue += value;
       }
 
+      // ===== FATURAMENTO POR MÊS =====
       if (stage === 'fechado' && value > 0) {
-        const activityDate = card.dateLastActivity ? new Date(card.dateLastActivity) : null;
-        if (activityDate) {
-          const monthKey = `${activityDate.getFullYear()}-${String(activityDate.getMonth() + 1).padStart(2, '0')}`;
-          revenueByMonth[monthKey] = (revenueByMonth[monthKey] || 0) + value;
-          if (monthKey === currentMonthKey) revenueCurrentMonth += value;
-          if (activityDate.getFullYear() === currentYear) revenueCurrentYear += value;
+        revenueTotal += value;
+
+        const monthKey = resolveMonthKey(card, cardLabels, now);
+
+        if (monthKey) {
+          if (!monthBuckets[monthKey]) {
+            monthBuckets[monthKey] = { revenue: 0, count: 0, cards: [] };
+          }
+          const bucket = monthBuckets[monthKey];
+          bucket.revenue += value;
+          bucket.count += 1;
+          bucket.cards.push({
+            id: card.id,
+            name: card.name,
+            value,
+            url: card.shortUrl,
+            labels: cardLabels.map((l) => l.name),
+            items: extractValueItems(card)
+          });
         } else {
-          revenueCurrentYear += value;
+          revenueSemMes += value;
         }
       }
 
@@ -110,7 +138,7 @@ export default async function handler(req, res) {
           name: card.name,
           url: card.shortUrl,
           phone: extractPhone(card.desc || ''),
-          labels: (card.idLabels || []).map((lid) => labelMap[lid]?.name).filter(Boolean)
+          labels: cardLabels.map((l) => l.name)
         });
       }
     }
@@ -129,35 +157,76 @@ export default async function handler(req, res) {
       : 0;
 
     const weeklySeries = buildWeeklySeries(cardsByWeek, 8);
-    const monthlyRevenueSeries = buildMonthlySeries(revenueByMonth, 6);
 
     // ====== METAS ======
     const metasList = lists.find((l) => classifyStage(l.name) === 'metas');
     let metaSemana = null;
-    let metaMensal = null;
+    let metaDefault = 0;          // meta genérica (card "Meta Mensal")
+    const metaByMonth = {};       // meta específica por mês (card "Meta Agosto")
 
     if (metasList) {
       const metasCards = cards.filter((c) => c.idList === metasList.id);
 
-      // Meta da Semana → card com "semana" no nome
       const metaSemanaCard = metasCards.find((c) => normalize(c.name).includes('semana'));
       if (metaSemanaCard) metaSemana = extractChecklistProgress(metaSemanaCard);
 
-      // Meta Mensal → card com "mensal" no nome
-      const metaMensalCard = metasCards.find((c) => normalize(c.name).includes('mensal'));
-      if (metaMensalCard) {
-        const target = extractValue(metaMensalCard);
-        const progress = extractChecklistProgress(metaMensalCard);
-        metaMensal = {
-          name: metaMensalCard.name,
-          target,
-          current: revenueCurrentMonth,
-          pct: target > 0 ? Math.min(100, Math.round((revenueCurrentMonth / target) * 100)) : 0,
-          checklistDone: progress.done,
-          checklistTotal: progress.total
-        };
+      for (const c of metasCards) {
+        if (normalize(c.name).includes('semana')) continue;
+        const target = extractValue(c);
+        if (target <= 0) continue;
+
+        // Meta com mês no nome ("Meta de Agosto", "Meta Mensal Julho/2026")
+        const parsed = parseMonthFromText(c.name);
+        if (parsed) {
+          const year = parsed.year || inferYear(now, c);
+          metaByMonth[ymKey(year, parsed.month)] = target;
+        } else {
+          metaDefault = target;
+        }
       }
     }
+
+    // ====== MONTA A LISTA DE MESES ======
+    // garante que o mês atual sempre apareça, mesmo zerado
+    if (!monthBuckets[currentMonthKey]) {
+      monthBuckets[currentMonthKey] = { revenue: 0, count: 0, cards: [] };
+    }
+    // garante que meses com meta cadastrada apareçam
+    Object.keys(metaByMonth).forEach((k) => {
+      if (!monthBuckets[k]) monthBuckets[k] = { revenue: 0, count: 0, cards: [] };
+    });
+
+    const months = Object.keys(monthBuckets)
+      .sort()
+      .map((key) => {
+        const b = monthBuckets[key];
+        const target = metaByMonth[key] != null ? metaByMonth[key] : metaDefault;
+        const [y, m] = key.split('-');
+        const monthIdx = parseInt(m, 10) - 1;
+        b.cards.sort((a, c) => c.value - a.value);
+        return {
+          key,
+          year: parseInt(y, 10),
+          month: monthIdx,
+          label: `${MONTH_SHORT[monthIdx]}/${y.slice(2)}`,
+          labelLong: `${capitalize(MONTH_NAMES[monthIdx])} de ${y}`,
+          revenue: b.revenue,
+          count: b.count,
+          cards: b.cards,
+          target,
+          hasOwnTarget: metaByMonth[key] != null,
+          pct: target > 0 ? Math.round((b.revenue / target) * 100) : 0,
+          isCurrent: key === currentMonthKey
+        };
+      });
+
+    const currentMonthData = months.find((m) => m.key === currentMonthKey) || null;
+    const revenueCurrentYear = months
+      .filter((m) => m.year === currentYear)
+      .reduce((acc, m) => acc + m.revenue, 0);
+
+    // série do gráfico: últimos 6 meses da linha do tempo (a partir de hoje)
+    const monthlyRevenueSeries = buildMonthlySeries(monthBuckets, 6, now);
 
     return res.status(200).json({
       success: true,
@@ -176,11 +245,17 @@ export default async function handler(req, res) {
       },
 
       revenue: {
-        currentMonth: revenueCurrentMonth,
+        currentMonthKey,
+        currentMonth: currentMonthData ? currentMonthData.revenue : 0,
         currentYear: revenueCurrentYear,
-        allTimeFechado: funnel.fechado.revenue,
+        allTimeFechado: revenueTotal,
+        semMes: revenueSemMes,
         monthlySeries: monthlyRevenueSeries
       },
+
+      // NOVO: tudo separado por mês
+      months,
+      metaDefault,
 
       conversion: {
         rate: Math.round(conversionRate * 10) / 10,
@@ -192,7 +267,6 @@ export default async function handler(req, res) {
       weeklySeries,
       abordagemHoje,
       metaSemana,
-      metaMensal,
 
       lists: lists.map((l) => ({
         id: l.id, name: l.name, stage: listStage[l.id].stage
@@ -209,7 +283,63 @@ export default async function handler(req, res) {
 }
 
 /* ============================================================
-   Helpers
+   Helpers — mês
+   ============================================================ */
+
+// Descobre o mês do card: 1º etiqueta "MÊS DE X", 2º nome do card, 3º data.
+function resolveMonthKey(card, cardLabels, now) {
+  for (const l of cardLabels) {
+    const parsed = parseMonthFromText(l.name);
+    if (parsed) {
+      return ymKey(parsed.year || inferYear(now, card), parsed.month);
+    }
+  }
+  const fromName = parseMonthFromText(card.name || '');
+  if (fromName) {
+    return ymKey(fromName.year || inferYear(now, card), fromName.month);
+  }
+  if (card.dateLastActivity) {
+    const d = new Date(card.dateLastActivity);
+    return ymKey(d.getFullYear(), d.getMonth());
+  }
+  return null;
+}
+
+// Aceita "MÊS DE JULHO", "julho", "Meta Agosto/2026", "mes 08/2026"
+function parseMonthFromText(text) {
+  const n = normalize(text);
+  if (!n) return null;
+
+  const yearMatch = n.match(/(20\d{2})/);
+  const year = yearMatch ? parseInt(yearMatch[1], 10) : null;
+
+  for (let i = 0; i < MONTH_NAMES.length; i++) {
+    const re = new RegExp(`\\b${MONTH_NAMES[i]}\\b`);
+    if (re.test(n)) return { month: i, year };
+  }
+  // formato "mes 08" / "mes 08/2026"
+  const numeric = n.match(/\bmes\D{0,4}(0?[1-9]|1[0-2])\b/);
+  if (numeric) return { month: parseInt(numeric[1], 10) - 1, year };
+
+  return null;
+}
+
+// Sem ano explícito na etiqueta: usa o ano da última atividade do card.
+function inferYear(now, card) {
+  if (card && card.dateLastActivity) {
+    return new Date(card.dateLastActivity).getFullYear();
+  }
+  return now.getFullYear();
+}
+
+function ymKey(year, monthIdx) {
+  return `${year}-${String(monthIdx + 1).padStart(2, '0')}`;
+}
+
+function capitalize(w) { return w ? w[0].toUpperCase() + w.slice(1) : ''; }
+
+/* ============================================================
+   Helpers — geral
    ============================================================ */
 function classifyStage(name) {
   const n = normalize(name);
@@ -229,6 +359,13 @@ function normalize(t) {
   return (t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
+const MONEY_SOURCE = 'R\\$\\s*([\\d.]+(?:,\\d{2})?)';
+
+function parseMoney(raw) {
+  const num = parseFloat(raw.replace(/\./g, '').replace(',', '.'));
+  return (!isNaN(num) && num > 0 && num < 10000000) ? num : 0;
+}
+
 function extractValue(card) {
   const texts = [card.name || '', card.desc || ''];
   (card.checklists || []).forEach((cl) => {
@@ -236,15 +373,33 @@ function extractValue(card) {
   });
   const combined = texts.join(' \n ');
 
-  const regex = /R\$\s*([\d.]+(?:,\d{2})?)/gi;
+  const regex = new RegExp(MONEY_SOURCE, 'gi');
   let total = 0;
   let match;
   while ((match = regex.exec(combined)) !== null) {
-    const raw = match[1].replace(/\./g, '').replace(',', '.');
-    const num = parseFloat(raw);
-    if (!isNaN(num) && num > 0 && num < 10000000) total += num;
+    total += parseMoney(match[1]);
   }
   return total;
+}
+
+// Detalha de onde veio cada valor (pra mostrar no painel do mês)
+function extractValueItems(card) {
+  const out = [];
+  const push = (label, text) => {
+    const regex = new RegExp(MONEY_SOURCE, 'gi');
+    let m;
+    while ((m = regex.exec(text || '')) !== null) {
+      const v = parseMoney(m[1]);
+      if (v > 0) out.push({ label: (label || '').trim().slice(0, 90), value: v });
+    }
+  };
+  (card.checklists || []).forEach((cl) => {
+    (cl.checkItems || []).forEach((ci) => push(ci.name, ci.name));
+  });
+  if (out.length === 0) {
+    push(card.name, `${card.name || ''} \n ${card.desc || ''}`);
+  }
+  return out;
 }
 
 function extractPhone(desc) {
@@ -288,14 +443,16 @@ function buildWeeklySeries(map, n) {
   return keys.map((k) => ({ label: k.slice(5), value: map[k] || 0 }));
 }
 
-function buildMonthlySeries(map, n) {
-  const now = new Date();
+function buildMonthlySeries(buckets, n, now) {
   const out = [];
   for (let i = n - 1; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    const label = d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
-    out.push({ label, value: map[key] || 0 });
+    const key = ymKey(d.getFullYear(), d.getMonth());
+    out.push({
+      key,
+      label: MONTH_SHORT[d.getMonth()],
+      value: buckets[key] ? buckets[key].revenue : 0
+    });
   }
   return out;
 }
