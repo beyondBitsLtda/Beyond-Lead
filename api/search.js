@@ -1,6 +1,5 @@
 // /api/search.js
 // Busca no Google Maps via Serper Places API.
-// Aceita parâmetro "limit" para controlar quantidade de resultados.
 
 import axios from 'axios';
 
@@ -18,7 +17,6 @@ export default async function handler(req, res) {
     });
   }
 
-  // Sanitiza o limit (entre 1 e 20)
   const maxResults = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 20);
 
   const apiKey = process.env.SERPER_API_KEY;
@@ -29,22 +27,14 @@ export default async function handler(req, res) {
   try {
     const response = await axios.post(
       'https://google.serper.dev/places',
+      { q: query.trim(), gl: 'br', hl: 'pt-br' },
       {
-        q: query.trim(),
-        gl: 'br',
-        hl: 'pt-br'
-      },
-      {
-        headers: {
-          'X-API-KEY': apiKey,
-          'Content-Type': 'application/json'
-        },
+        headers: { 'X-API-KEY': apiKey, 'Content-Type': 'application/json' },
         timeout: 15000
       }
     );
 
     const places = response.data?.places || [];
-
     const results = places.slice(0, maxResults).map((p) => ({
       title: p.title,
       link: p.website || (p.placeId
@@ -72,10 +62,8 @@ export default async function handler(req, res) {
       results
     });
   } catch (error) {
-    const apiError =
-      error.response?.data?.message || error.message || 'Erro desconhecido.';
+    const apiError = error.response?.data?.message || error.message || 'Erro desconhecido.';
     console.error('[/api/search] erro:', apiError);
-
     return res.status(502).json({
       success: false,
       error: 'Falha ao consultar a Serper Places.',

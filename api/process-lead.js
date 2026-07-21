@@ -1,5 +1,5 @@
 // /api/process-lead.js
-// Versão com formatação melhorada do card + link do Google Maps + deduplicação.
+// Processa 1 lead: dedup no Trello + scrape + Gemini + cria card.
 
 import axios from 'axios';
 import * as cheerio from 'cheerio';
@@ -43,10 +43,12 @@ export default async function handler(req, res) {
       }
     }
 
+    const telefoneFormatado = formatPhone(place.telefone);
     const lead = {
       nome_empresa: smartTitleCase(place.nome),
       email: null,
-      telefone: formatPhone(place.telefone),
+      telefone: telefoneFormatado,
+      whatsapp_url: buildWhatsappUrl(telefoneFormatado),
       endereco: place.endereco || null,
       nicho: smartTitleCase(place.categoria),
       site: place.site || null,
@@ -91,110 +93,57 @@ export default async function handler(req, res) {
   }
 }
 
-/* ============================================================
-   Formatação inteligente
-   ============================================================ */
-
-// Title Case que respeita siglas, preposições e acrônimos
+/* ========== Formatação ========== */
 function smartTitleCase(text) {
   if (!text) return null;
-
-  // Lista de palavras que ficam em minúsculo (preposições, artigos, conjunções)
-  const lowercase = new Set([
-    'de', 'da', 'do', 'das', 'dos', 'e', 'em', 'na', 'no',
-    'para', 'por', 'a', 'o', 'as', 'os', 'com', 'sem'
-  ]);
-
-  // Lista de palavras/siglas que ficam maiúsculas
-  const uppercase = new Set([
-    'me', 'eireli', 'ltda', 'sa', 's/a', 'cnpj', 'mei', 'epp'
-  ]);
-
-  return text
-    .trim()
-    .toLowerCase()
-    .split(/\s+/)
-    .map((word, index) => {
-      // Remove pontuação para checagem
-      const clean = word.replace(/[^\wÀ-ÿ]/g, '');
-
-      // Primeira palavra sempre capitalizada
-      if (index === 0) return capitalize(word);
-
-      // Siglas conhecidas em maiúsculo
-      if (uppercase.has(clean)) return word.toUpperCase();
-
-      // Preposições e artigos em minúsculo
-      if (lowercase.has(clean)) return word;
-
-      return capitalize(word);
-    })
-    .join(' ');
+  const lowercase = new Set(['de','da','do','das','dos','e','em','na','no','para','por','a','o','as','os','com','sem']);
+  const uppercase = new Set(['me','eireli','ltda','sa','s/a','cnpj','mei','epp']);
+  return text.trim().toLowerCase().split(/\s+/).map((word, i) => {
+    const clean = word.replace(/[^\wÀ-ÿ]/g, '');
+    if (i === 0) return capitalize(word);
+    if (uppercase.has(clean)) return word.toUpperCase();
+    if (lowercase.has(clean)) return word;
+    return capitalize(word);
+  }).join(' ');
 }
+function capitalize(w) { return w ? w[0].toUpperCase() + w.slice(1) : ''; }
 
-function capitalize(word) {
-  if (!word) return '';
-  return word.charAt(0).toUpperCase() + word.slice(1);
-}
-
-// Formata telefone para padrão brasileiro (XX) XXXXX-XXXX
 function formatPhone(phone) {
   if (!phone) return null;
-
-  const digits = phone.replace(/\D/g, '');
-
-  // Celular brasileiro: 11 dígitos (DDD + 9 + 8 dígitos)
-  if (digits.length === 11) {
-    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
-  }
-
-  // Fixo brasileiro: 10 dígitos
-  if (digits.length === 10) {
-    return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
-  }
-
-  // Internacional com +55: 12 ou 13 dígitos
-  if (digits.length === 13 && digits.startsWith('55')) {
-    return `(${digits.slice(2, 4)}) ${digits.slice(4, 9)}-${digits.slice(9)}`;
-  }
-  if (digits.length === 12 && digits.startsWith('55')) {
-    return `(${digits.slice(2, 4)}) ${digits.slice(4, 8)}-${digits.slice(8)}`;
-  }
-
-  // Não reconhecido — retorna como veio
+  const d = phone.replace(/\D/g, '');
+  if (d.length === 11) return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`;
+  if (d.length === 13 && d.startsWith('55')) return `(${d.slice(2,4)}) ${d.slice(4,9)}-${d.slice(9)}`;
+  if (d.length === 12 && d.startsWith('55')) return `(${d.slice(2,4)}) ${d.slice(4,8)}-${d.slice(8)}`;
   return phone.trim();
 }
 
-/* ============================================================
-   Deduplicação
-   ============================================================ */
+function buildWhatsappUrl(phone) {
+  if (!phone) return null;
+  let d = phone.replace(/\D/g, '');
+  if (d.length === 10 || d.length === 11) d = '55' + d;
+  if (d.length < 12) return null;
+  return `https://wa.me/${d}`;
+}
+
+/* ========== Dedup ========== */
 async function checkDuplicate(place) {
   const apiKey = process.env.TRELLO_API_KEY;
   const token = process.env.TRELLO_TOKEN;
   const listId = process.env.TRELLO_LIST_ID;
-
   if (!apiKey || !token || !listId) return null;
 
   try {
     const response = await axios.get(
       `https://api.trello.com/1/lists/${listId}/cards`,
-      {
-        params: { key: apiKey, token, fields: 'name,desc,shortUrl' },
-        timeout: 10000
-      }
+      { params: { key: apiKey, token, fields: 'name,desc,shortUrl' }, timeout: 10000 }
     );
-
     const cards = response.data || [];
-    const normalizedName = normalize(place.nome);
-    const normalizedSite = place.site ? normalize(place.site) : null;
-
+    const nName = normalize(place.nome);
+    const nSite = place.site ? normalize(place.site) : null;
     for (const card of cards) {
-      if (normalize(card.name) === normalizedName) {
-        return { id: card.id, name: card.name, url: card.shortUrl, match: 'nome' };
-      }
-      if (normalizedSite && normalize(card.desc || '').includes(normalizedSite)) {
-        return { id: card.id, name: card.name, url: card.shortUrl, match: 'site' };
-      }
+      if (normalize(card.name) === nName) return { id: card.id, name: card.name, url: card.shortUrl, match: 'nome' };
+      if (nSite && normalize(card.desc || '').includes(nSite)) return { id: card.id, name: card.name, url: card.shortUrl, match: 'site' };
     }
     return null;
   } catch (err) {
@@ -202,28 +151,14 @@ async function checkDuplicate(place) {
     return null;
   }
 }
+function normalize(t) { return (t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'').trim(); }
 
-function normalize(text) {
-  return (text || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]/g, '')
-    .trim();
-}
-
-/* ============================================================
-   Scraping + Gemini
-   ============================================================ */
+/* ========== Scrape + Gemini ========== */
 async function scrapeSite(url) {
   const response = await axios.get(url, {
-    timeout: 12000,
-    maxRedirects: 5,
-    httpsAgent,
-    headers: BROWSER_HEADERS,
+    timeout: 12000, maxRedirects: 5, httpsAgent, headers: BROWSER_HEADERS,
     validateStatus: (s) => s >= 200 && s < 400
   });
-
   const $ = cheerio.load(response.data);
   $('script, style, noscript, iframe, svg, img, link, meta').remove();
   let text = $('body').text().replace(/\s+/g, ' ').trim();
@@ -234,33 +169,19 @@ async function scrapeSite(url) {
 async function extractEmailAndSummary(text, url) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return { email: null, resumo: null };
-
-  const endpoint =
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
   const prompt = [
     `Extraia do texto abaixo (site ${url}) APENAS:`,
     '- email (primeiro e-mail comercial encontrado, ou null)',
     '- resumo (descrição de 1-2 frases do que a empresa faz, ou null)',
-    '',
-    'Responda APENAS um JSON: {"email":"...","resumo":"..."}',
-    '',
-    'Texto:',
-    '"""',
-    text,
-    '"""'
+    '', 'Responda APENAS um JSON: {"email":"...","resumo":"..."}',
+    '', 'Texto:', '"""', text, '"""'
   ].join('\n');
-
   try {
     const response = await axios.post(endpoint, {
       contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.2,
-        maxOutputTokens: 300,
-        responseMimeType: 'application/json'
-      }
+      generationConfig: { temperature: 0.2, maxOutputTokens: 300, responseMimeType: 'application/json' }
     }, { timeout: 20000, headers: { 'Content-Type': 'application/json' } });
-
     const raw = response.data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
     const cleaned = raw.replace(/^```json\s*/i, '').replace(/```$/g, '').trim();
     return JSON.parse(cleaned);
@@ -269,85 +190,46 @@ async function extractEmailAndSummary(text, url) {
   }
 }
 
-/* ============================================================
-   Card no Trello — formatação caprichada
-   ============================================================ */
+/* ========== Trello card ========== */
 async function createTrelloCard(lead, query) {
   const apiKey = process.env.TRELLO_API_KEY;
   const token = process.env.TRELLO_TOKEN;
   const listId = process.env.TRELLO_LIST_ID;
+  if (!apiKey || !token || !listId) throw new Error('Credenciais do Trello não configuradas.');
 
-  if (!apiKey || !token || !listId) {
-    throw new Error('Credenciais do Trello não configuradas.');
-  }
-
-  // Monta a descrição com seções bem separadas
   const sections = [];
-
-  // === Seção: Informações principais ===
   sections.push('## 📇 Informações de Contato\n');
   const contato = [];
   if (lead.telefone) contato.push(`📞 **Telefone:** ${lead.telefone}`);
+  if (lead.whatsapp_url) contato.push(`💬 **WhatsApp:** ${lead.whatsapp_url}`);
   if (lead.email) contato.push(`✉️ **E-mail:** ${lead.email}`);
   if (lead.endereco) contato.push(`📍 **Endereço:** ${lead.endereco}`);
   sections.push(contato.length ? contato.join('\n') : '_Sem dados de contato._');
 
-  // === Seção: Links úteis ===
   sections.push('\n\n## 🔗 Links\n');
   const links = [];
   if (lead.site) links.push(`🌐 **Site:** ${lead.site}`);
   if (lead.maps_url) links.push(`🗺️ **Google Maps:** ${lead.maps_url}`);
   sections.push(links.length ? links.join('\n') : '_Sem links cadastrados._');
 
-  // === Seção: Avaliação Google ===
   if (lead.rating) {
     sections.push('\n\n## ⭐ Avaliação no Google\n');
     const stars = '★'.repeat(Math.round(lead.rating)) + '☆'.repeat(5 - Math.round(lead.rating));
-    sections.push(
-      `${stars} **${lead.rating.toFixed(1)}** ` +
-      `(${lead.reviews || 0} ${lead.reviews === 1 ? 'avaliação' : 'avaliações'})`
-    );
+    sections.push(`${stars} **${lead.rating.toFixed(1)}** (${lead.reviews || 0} ${lead.reviews === 1 ? 'avaliação' : 'avaliações'})`);
   }
+  if (lead.nicho) { sections.push('\n\n## 🏷️ Categoria\n'); sections.push(lead.nicho); }
+  if (lead.resumo) { sections.push('\n\n## 📝 Sobre o Negócio\n'); sections.push(lead.resumo); }
 
-  // === Seção: Categoria/Nicho ===
-  if (lead.nicho) {
-    sections.push('\n\n## 🏷️ Categoria\n');
-    sections.push(lead.nicho);
-  }
-
-  // === Seção: Resumo ===
-  if (lead.resumo) {
-    sections.push('\n\n## 📝 Sobre o Negócio\n');
-    sections.push(lead.resumo);
-  }
-
-  // === Rodapé com metadados ===
   sections.push('\n\n---\n');
   sections.push(`🔎 **Termo de busca:** ${query || '—'}`);
-  sections.push(
-    `🕒 **Prospectado em:** ${new Date().toLocaleString('pt-BR', {
-      timeZone: 'America/Sao_Paulo',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    })}`
-  );
+  sections.push(`🕒 **Prospectado em:** ${new Date().toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+  })}`);
 
   const desc = sections.join('\n');
-
   const response = await axios.post('https://api.trello.com/1/cards', null, {
-    params: {
-      key: apiKey,
-      token,
-      idList: listId,
-      name: lead.nome_empresa,
-      desc,
-      pos: 'bottom'
-    },
+    params: { key: apiKey, token, idList: listId, name: lead.nome_empresa, desc, pos: 'bottom' },
     timeout: 10000
   });
-
   return response.data;
 }
