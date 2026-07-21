@@ -1,7 +1,7 @@
 {
   "name": "prospect-leads",
-  "version": "1.0.0",
-  "description": "Prospecção automatizada de leads com IA — Google Search + Gemini + Trello",
+  "version": "2.0.0",
+  "description": "Central de operação de leads — prospecção, funil, WhatsApp",
   "type": "module",
   "scripts": {
     "dev": "vercel dev",

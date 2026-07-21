@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:," />
+    <title>Prospect Leads — Central de Operação</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <div class="bg-glow"></div>
+
+    <main class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">◆</span>
+          <span class="brand-name">PROSPECT<span>LEADS</span></span>
+        </div>
+        <nav class="tabs">
+          <button class="tab-btn active" data-tab="dashboard">Central</button>
+          <button class="tab-btn" data-tab="prospect">Prospecção</button>
+        </nav>
+      </header>
+
+      <!-- ============================================================ -->
+      <!-- ABA: CENTRAL DE OPERAÇÃO                                     -->
+      <!-- ============================================================ -->
+      <section class="tab-content active" id="tab-dashboard">
+        <div class="dash-header">
+          <div>
+            <h1 class="dash-title">Central de Operação</h1>
+            <p class="dash-sub" id="last-update">Sincronizando com o Trello…</p>
+          </div>
+          <button class="btn-ghost" id="refresh-btn">↻ Atualizar</button>
+        </div>
+
+        <!-- KPIs -->
+        <div class="grid-kpi">
+          <div class="kpi">
+            <span class="kpi-label">No funil</span>
+            <span class="kpi-value" id="kpi-funil">—</span>
+            <span class="kpi-hint">Alvos + Abordagem + Diagnóstico + Proposta</span>
+          </div>
+          <div class="kpi kpi-accent">
+            <span class="kpi-label">Em abordagem</span>
+            <span class="kpi-value" id="kpi-abordagem">—</span>
+            <span class="kpi-hint">Precisa de ação hoje</span>
+          </div>
+          <div class="kpi kpi-success">
+            <span class="kpi-label">Fechados</span>
+            <span class="kpi-value" id="kpi-fechados">—</span>
+            <span class="kpi-hint">Total no board</span>
+          </div>
+          <div class="kpi kpi-money">
+            <span class="kpi-label">Faturamento no mês</span>
+            <span class="kpi-value" id="kpi-mes">—</span>
+            <span class="kpi-hint" id="kpi-mes-hint">—</span>
+          </div>
+        </div>
+
+        <!-- Grid principal -->
+        <div class="grid-dash">
+          <!-- Funil -->
+          <div class="panel panel-funnel">
+            <div class="panel-head">
+              <h2>Funil de Conversão</h2>
+              <span class="panel-tag" id="conv-tag">—</span>
+            </div>
+            <div id="funnel-chart" class="funnel"></div>
+          </div>
+
+          <!-- Meta da semana -->
+          <div class="panel panel-meta">
+            <div class="panel-head">
+              <h2>Meta da Semana</h2>
+            </div>
+            <div id="meta-widget" class="meta">
+              <div class="meta-empty">Sem meta cadastrada.</div>
+            </div>
+          </div>
+
+          <!-- Meta Mensal (faturamento) -->
+          <div class="panel panel-meta-mensal">
+            <div class="panel-head">
+              <h2>Meta de Faturamento</h2>
+              <span class="panel-tag" id="meta-mensal-pct">—</span>
+            </div>
+            <div id="meta-mensal-widget" class="meta">
+              <div class="meta-empty">Sem meta mensal cadastrada.</div>
+            </div>
+          </div>
+
+          <!-- Faturamento mensal -->
+          <div class="panel panel-revenue">
+            <div class="panel-head">
+              <h2>Faturamento — 6 meses</h2>
+              <span class="panel-tag" id="revenue-total">—</span>
+            </div>
+            <div id="revenue-chart" class="chart-bars"></div>
+          </div>
+
+          <!-- Etiquetas -->
+          <div class="panel panel-labels">
+            <div class="panel-head">
+              <h2>Distribuição por Etiqueta</h2>
+            </div>
+            <div id="labels-chart" class="labels-list"></div>
+          </div>
+
+          <!-- Semanal -->
+          <div class="panel panel-weekly">
+            <div class="panel-head">
+              <h2>Movimentação — últimas 8 semanas</h2>
+            </div>
+            <div id="weekly-chart"></div>
+          </div>
+        </div>
+
+        <!-- Abordagem HOJE -->
+        <div class="panel panel-today">
+          <div class="panel-head">
+            <h2>🔥 Abordagem HOJE</h2>
+            <span class="panel-tag" id="today-count">0</span>
+          </div>
+          <div id="today-list" class="today-list">
+            <div class="empty">Nenhum lead na coluna "Abordagem HOJE".</div>
+          </div>
+        </div>
+
+        <!-- Templates -->
+        <div class="panel panel-templates">
+          <div class="panel-head">
+            <h2>Templates de Mensagem</h2>
+            <button class="btn-ghost small" id="new-template">+ Novo</button>
+          </div>
+          <p class="panel-sub">
+            Use as variáveis <code>{{nome_empresa}}</code> e <code>{{nicho}}</code>
+            no texto. Elas serão substituídas ao abrir o WhatsApp.
+          </p>
+          <div id="templates-list" class="templates-list"></div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- ABA: PROSPECÇÃO                                              -->
+      <!-- ============================================================ -->
+      <section class="tab-content" id="tab-prospect">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Buscar novos leads</h2>
+          </div>
+
+          <form id="search-form" autocomplete="off">
+            <label for="query">Termo de busca</label>
+            <input type="text" id="query" name="query"
+              placeholder="Ex: Clínicas de estética em São Paulo"
+              required minlength="3" />
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="limit">Quantidade</label>
+                <select id="limit" name="limit">
+                  <option value="5">5 leads</option>
+                  <option value="10" selected>10 leads</option>
+                  <option value="20">20 leads</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="min-rating">Rating mínimo</label>
+                <select id="min-rating" name="min-rating">
+                  <option value="0" selected>Qualquer</option>
+                  <option value="3">3.0+</option>
+                  <option value="4">4.0+</option>
+                  <option value="4.5">4.5+</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="filters">
+              <label class="check">
+                <input type="checkbox" id="require-phone" />
+                <span>Só com telefone</span>
+              </label>
+              <label class="check">
+                <input type="checkbox" id="require-website" />
+                <span>Só com site</span>
+              </label>
+              <label class="check">
+                <input type="checkbox" id="dedup" checked />
+                <span>Evitar duplicados</span>
+              </label>
+            </div>
+
+            <button type="submit" id="start-btn" class="btn-primary">
+              Iniciar Prospecção
+            </button>
+          </form>
+
+          <div class="progress" id="progress" hidden>
+            <div class="progress-info">
+              <span id="progress-label">Aguardando…</span>
+              <span id="progress-count">0 / 0</span>
+            </div>
+            <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Log</h2>
+            <button type="button" id="clear-log" class="btn-ghost small">Limpar</button>
+          </div>
+          <div id="log" class="log" aria-live="polite">
+            <div class="log-empty">Aguardando o início de uma busca.</div>
+          </div>
+
+          <div class="summary" id="summary" hidden>
+            <h3>Resumo</h3>
+            <ul>
+              <li>✓ Cadastrados: <strong id="sum-ok">0</strong></li>
+              <li>⊘ Falhas/Duplicados: <strong id="sum-fail">0</strong></li>
+              <li>⏱ Tempo: <strong id="sum-time">—</strong></li>
+            </ul>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Modal de template -->
+    <div class="modal" id="template-modal" hidden>
+      <div class="modal-inner">
+        <div class="modal-head">
+          <h3 id="template-modal-title">Novo template</h3>
+          <button class="btn-ghost small" id="template-close">✕</button>
+        </div>
+        <label>Nome do template</label>
+        <input type="text" id="tpl-name" placeholder="Ex: Primeira abordagem" />
+        <label>Mensagem</label>
+        <textarea id="tpl-body" rows="7"
+          placeholder="Olá! Meu nome é... vi que a {{nome_empresa}} trabalha com {{nicho}}..."></textarea>
+        <div class="modal-actions">
+          <button class="btn-ghost" id="tpl-cancel">Cancelar</button>
+          <button class="btn-primary" id="tpl-save">Salvar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal de envio WhatsApp -->
+    <div class="modal" id="send-modal" hidden>
+      <div class="modal-inner">
+        <div class="modal-head">
+          <h3 id="send-modal-title">Enviar WhatsApp</h3>
+          <button class="btn-ghost small" id="send-close">✕</button>
+        </div>
+        <div class="send-target" id="send-target"></div>
+        <label>Template</label>
+        <select id="send-template"><option value="">— Escrever do zero —</option></select>
+        <label>Mensagem</label>
+        <textarea id="send-body" rows="8"></textarea>
+        <div class="modal-actions">
+          <button class="btn-ghost" id="send-cancel">Cancelar</button>
+          <a class="btn-primary" id="send-open" href="#" target="_blank" rel="noopener">
+            Abrir no WhatsApp →
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

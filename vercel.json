@@ -5,6 +5,9 @@
     },
     "api/search.js": {
       "maxDuration": 30
+    },
+    "api/trello-stats.js": {
+      "maxDuration": 30
     }
   }
 }
