@@ -1,0 +1,23 @@
+{
+  "id": "BEYOND-0001",
+  "titulo": "Deploy quebrado",
+  "descricao": "Depois que migramos da vercel para o github pages o host simplismente não funciona.  Os estilos da página quebrarm por completo, suspeito que tenha haver com as chaves do trello ou algo que estvaa nas config da vercel. \nA lisa disse que pode ser algum problema de rota no build também. Vale conferir o base patch.\n\nNOTA: Odeio VERCEL.",
+  "tipo": "bug",
+  "prioridade": "alta",
+  "status": "aberta",
+  "responsavel": "Brayan Rodrigues",
+  "prazo": "2026-09-29",
+  "versaoAlvo": "0.1.0",
+  "criadaEm": "2026-09-27T05:24:46.022Z",
+  "criadaPor": "Brayan Rodrigues <brayan.rodrigues@delp.com.br>",
+  "atualizadaEm": "2026-09-27T05:24:46.022Z",
+  "comentarios": [],
+  "evidencias": [],
+  "historico": [
+    {
+      "quando": "2026-09-27T05:24:46.022Z",
+      "autor": "Brayan Rodrigues <brayan.rodrigues@delp.com.br>",
+      "mudanca": "issue criada"
+    }
+  ]
+}
