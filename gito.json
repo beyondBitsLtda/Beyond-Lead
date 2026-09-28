@@ -9,14 +9,27 @@
     "responsavel": "Brayan Rodrigues",
     "equipe": "Beyond Bits"
   },
-  "versao": "1.1.0-lisa-prospeccao.1",
+  "versao": "1.1.0",
   "atualizadoEm": "2026-09-28",
   "compilacao": {
-    "numero": 6,
+    "numero": 7,
     "data": "2026-09-28",
     "artefato": ""
   },
   "historico": [
+    {
+      "versao": "1.1.0",
+      "data": "2026-09-28",
+      "branch": "main",
+      "tipo": "funcionalidade",
+      "resumo": "Publicação da Lisa na aba Prospecção, com chave de acesso da equipe.",
+      "itens": [
+        "Junta na main a branch lisa-prospeccao (versão 1.1.0-lisa-prospeccao.1).",
+        "Lisa na aba Prospecção: busca, sugere e propõe leads e templates; a criação no CRM é confirmada por uma pessoa.",
+        "A API passa a exigir a chave de acesso da equipe."
+      ],
+      "issues": []
+    },
     {
       "versao": "1.1.0-lisa-prospeccao.1",
       "data": "2026-09-28",
