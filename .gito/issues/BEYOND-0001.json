@@ -4,13 +4,13 @@
   "descricao": "Depois que migramos da vercel para o github pages o host simplismente não funciona.  Os estilos da página quebrarm por completo, suspeito que tenha haver com as chaves do trello ou algo que estvaa nas config da vercel. \nA lisa disse que pode ser algum problema de rota no build também. Vale conferir o base patch.\n\nNOTA: Odeio VERCEL.",
   "tipo": "bug",
   "prioridade": "alta",
-  "status": "em-revisao",
+  "status": "concluida",
   "responsavel": "Brayan Rodrigues",
   "prazo": "2026-09-29",
   "versaoAlvo": "0.1.0",
   "criadaEm": "2026-09-27T05:24:46.022Z",
   "criadaPor": "Brayan Rodrigues <brayan.rodrigues@delp.com.br>",
-  "atualizadaEm": "2026-09-28T22:47:53.833Z",
+  "atualizadaEm": "2026-09-28T22:53:40.927Z",
   "comentarios": [
     {
       "quando": "2026-09-28T21:24:35.751Z",
@@ -44,6 +44,11 @@
       "quando": "2026-09-28T21:31:16.103Z",
       "autor": "Brayan Rodrigues (via Claude)",
       "mudanca": "status: em-andamento → em-revisao"
+    },
+    {
+      "quando": "2026-09-28T22:53:40.927Z",
+      "autor": "Brayan Rodrigues <brayan.rodrigues@delp.com.br>",
+      "mudanca": "situação: em-revisao → concluida"
     }
   ]
 }
