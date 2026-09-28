@@ -4,20 +4,41 @@
   "descricao": "Depois que migramos da vercel para o github pages o host simplismente não funciona.  Os estilos da página quebrarm por completo, suspeito que tenha haver com as chaves do trello ou algo que estvaa nas config da vercel. \nA lisa disse que pode ser algum problema de rota no build também. Vale conferir o base patch.\n\nNOTA: Odeio VERCEL.",
   "tipo": "bug",
   "prioridade": "alta",
-  "status": "aberta",
+  "status": "em-revisao",
   "responsavel": "Brayan Rodrigues",
   "prazo": "2026-09-29",
   "versaoAlvo": "0.1.0",
   "criadaEm": "2026-09-27T05:24:46.022Z",
   "criadaPor": "Brayan Rodrigues <brayan.rodrigues@delp.com.br>",
-  "atualizadaEm": "2026-09-27T05:24:46.022Z",
-  "comentarios": [],
+  "atualizadaEm": "2026-09-28T21:31:16.103Z",
+  "comentarios": [
+    {
+      "quando": "2026-09-28T21:24:35.751Z",
+      "autor": "Brayan Rodrigues (via Claude)",
+      "texto": "Diagnóstico: (1) o HTML carrega /style.css e /app.js com caminho absoluto; no GitHub Pages o site fica em /Beyond-Lead/, então esses arquivos dão 404 e a página fica sem estilo. Além disso, o Pages publica a raiz do repositório, que tem as cópias antigas do front, e não a pasta public/. (2) O GitHub Pages só serve arquivos estáticos: as funções de api/ (Trello, Serper, Gemini) não rodam lá, e as chaves que ficavam nas variáveis da Vercel não podem ir para o navegador. Vou corrigir os caminhos, publicar a pasta public/ via GitHub Actions e deixar configurável o endereço da API."
+    },
+    {
+      "quando": "2026-09-28T21:31:16.103Z",
+      "autor": "Brayan Rodrigues (via Claude)",
+      "texto": "Correção na versão 0.1.1-issues_0.1.0.1 (branch Issues_0.1.0). Front: caminhos de style.css/app.js agora relativos e a pasta public/ publicada no Pages pelo workflow .github/workflows/pages.yml. API: search, process-lead e trello-stats migradas da Vercel para um Cloudflare Worker (worker/), com as chaves como secrets do Worker enviados pelo workflow .github/workflows/worker.yml e CORS restrito a ALLOWED_ORIGINS; endereço da API em public/config.js. Removidos vercel.json, api/chat.js e as cópias antigas do front na raiz. Testado localmente: CSS/JS carregando no subcaminho /Beyond-Lead/ e rotas do Worker com as APIs externas simuladas. Para conferir em produção: (1) Settings → Pages → Source: GitHub Actions; (2) cadastrar os secrets listados no README; (3) rodar o workflow Deploy Worker (API) e colocar a URL do Worker em public/config.js."
+    }
+  ],
   "evidencias": [],
   "historico": [
     {
       "quando": "2026-09-27T05:24:46.022Z",
       "autor": "Brayan Rodrigues <brayan.rodrigues@delp.com.br>",
       "mudanca": "issue criada"
+    },
+    {
+      "quando": "2026-09-28T21:24:35.751Z",
+      "autor": "Brayan Rodrigues (via Claude)",
+      "mudanca": "status: aberta → em-andamento"
+    },
+    {
+      "quando": "2026-09-28T21:31:16.103Z",
+      "autor": "Brayan Rodrigues (via Claude)",
+      "mudanca": "status: em-andamento → em-revisao"
     }
   ]
 }

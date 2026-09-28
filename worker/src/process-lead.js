@@ -1,11 +1,5 @@
-// /api/process-lead.js
+// /worker/src/process-lead.js
 // Processa 1 lead: dedup no Trello + scrape + Gemini + cria card.
-
-import axios from 'axios';
-import * as cheerio from 'cheerio';
-import https from 'https';
-
-const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 const BROWSER_HEADERS = {
   'User-Agent':
@@ -16,30 +10,29 @@ const BROWSER_HEADERS = {
   Referer: 'https://www.google.com/'
 };
 
-export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST');
-    return res.status(405).json({ error: 'Método não permitido. Use POST.' });
-  }
-
-  const { url, query, place, dedup } = req.body || {};
+export async function processLead(body, env) {
+  const { query, place, dedup } = body || {};
 
   if (!place || !place.nome) {
-    return res.status(400).json({
-      error: 'Dados do place ausentes. Reenvie com o campo "place" preenchido.'
-    });
+    return {
+      status: 400,
+      data: { error: 'Dados do place ausentes. Reenvie com o campo "place" preenchido.' }
+    };
   }
 
   try {
     if (dedup) {
-      const isDuplicate = await checkDuplicate(place);
+      const isDuplicate = await checkDuplicate(place, env);
       if (isDuplicate) {
-        return res.status(200).json({
-          success: false,
-          stage: 'dedup',
-          reason: 'Lead já cadastrado no Trello.',
-          duplicate_of: isDuplicate
-        });
+        return {
+          status: 200,
+          data: {
+            success: false,
+            stage: 'dedup',
+            reason: 'Lead já cadastrado no Trello.',
+            duplicate_of: isDuplicate
+          }
+        };
       }
     }
 
@@ -64,7 +57,7 @@ export default async function handler(req, res) {
       try {
         const cleanText = await scrapeSite(place.site);
         if (cleanText && cleanText.length > 80) {
-          const enrich = await extractEmailAndSummary(cleanText, place.site);
+          const enrich = await extractEmailAndSummary(cleanText, place.site, env);
           lead.email = enrich.email || null;
           lead.resumo = enrich.resumo || null;
         }
@@ -73,23 +66,29 @@ export default async function handler(req, res) {
       }
     }
 
-    const card = await createTrelloCard(lead, query);
+    const card = await createTrelloCard(lead, query, env);
 
-    return res.status(200).json({
-      success: true,
-      lead,
-      trello: {
-        id: card.id,
-        name: card.name,
-        url: card.shortUrl || card.url
+    return {
+      status: 200,
+      data: {
+        success: true,
+        lead,
+        trello: {
+          id: card.id,
+          name: card.name,
+          url: card.shortUrl || card.url
+        }
       }
-    });
+    };
   } catch (error) {
     console.error(`[/api/process-lead] erro:`, error.message);
-    return res.status(200).json({
-      success: false,
-      error: error.message || 'Erro desconhecido ao processar lead.'
-    });
+    return {
+      status: 200,
+      data: {
+        success: false,
+        error: error.message || 'Erro desconhecido ao processar lead.'
+      }
+    };
   }
 }
 
@@ -127,18 +126,20 @@ function buildWhatsappUrl(phone) {
 }
 
 /* ========== Dedup ========== */
-async function checkDuplicate(place) {
-  const apiKey = process.env.TRELLO_API_KEY;
-  const token = process.env.TRELLO_TOKEN;
-  const listId = process.env.TRELLO_LIST_ID;
+async function checkDuplicate(place, env) {
+  const apiKey = env.TRELLO_API_KEY;
+  const token = env.TRELLO_TOKEN;
+  const listId = env.TRELLO_LIST_ID;
   if (!apiKey || !token || !listId) return null;
 
   try {
-    const response = await axios.get(
-      `https://api.trello.com/1/lists/${listId}/cards`,
-      { params: { key: apiKey, token, fields: 'name,desc,shortUrl' }, timeout: 10000 }
+    const params = new URLSearchParams({ key: apiKey, token, fields: 'name,desc,shortUrl' });
+    const response = await fetch(
+      `https://api.trello.com/1/lists/${listId}/cards?${params}`,
+      { signal: AbortSignal.timeout(10000) }
     );
-    const cards = response.data || [];
+    if (!response.ok) throw new Error(`Trello HTTP ${response.status}`);
+    const cards = (await response.json()) || [];
     const nName = normalize(place.nome);
     const nSite = place.site ? normalize(place.site) : null;
     for (const card of cards) {
@@ -154,20 +155,42 @@ async function checkDuplicate(place) {
 function normalize(t) { return (t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'').trim(); }
 
 /* ========== Scrape + Gemini ========== */
+const SCRAPE_MAX_CHARS = 6000;
+
+// Lê o texto visível do <body> com o HTMLRewriter (streaming, nativo do Workers).
 async function scrapeSite(url) {
-  const response = await axios.get(url, {
-    timeout: 12000, maxRedirects: 5, httpsAgent, headers: BROWSER_HEADERS,
-    validateStatus: (s) => s >= 200 && s < 400
+  const response = await fetch(url, {
+    headers: BROWSER_HEADERS,
+    redirect: 'follow',
+    signal: AbortSignal.timeout(12000)
   });
-  const $ = cheerio.load(response.data);
-  $('script, style, noscript, iframe, svg, img, link, meta').remove();
-  let text = $('body').text().replace(/\s+/g, ' ').trim();
-  if (text.length > 6000) text = text.slice(0, 6000);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+  let text = '';
+  let skipDepth = 0;
+  const rewriter = new HTMLRewriter()
+    .on('script, style, noscript, iframe, svg, template', {
+      element(el) {
+        skipDepth += 1;
+        el.onEndTag(() => { skipDepth -= 1; });
+      }
+    })
+    .on('body', {
+      text(chunk) {
+        if (skipDepth > 0 || text.length > SCRAPE_MAX_CHARS * 2) return;
+        text += chunk.text;
+        if (chunk.lastInTextNode) text += ' ';
+      }
+    });
+  await rewriter.transform(response).arrayBuffer();
+
+  text = text.replace(/\s+/g, ' ').trim();
+  if (text.length > SCRAPE_MAX_CHARS) text = text.slice(0, SCRAPE_MAX_CHARS);
   return text;
 }
 
-async function extractEmailAndSummary(text, url) {
-  const apiKey = process.env.GEMINI_API_KEY;
+async function extractEmailAndSummary(text, url, env) {
+  const apiKey = env.GEMINI_API_KEY;
   if (!apiKey) return { email: null, resumo: null };
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
   const prompt = [
@@ -178,11 +201,18 @@ async function extractEmailAndSummary(text, url) {
     '', 'Texto:', '"""', text, '"""'
   ].join('\n');
   try {
-    const response = await axios.post(endpoint, {
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.2, maxOutputTokens: 300, responseMimeType: 'application/json' }
-    }, { timeout: 20000, headers: { 'Content-Type': 'application/json' } });
-    const raw = response.data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.2, maxOutputTokens: 300, responseMimeType: 'application/json' }
+      }),
+      signal: AbortSignal.timeout(20000)
+    });
+    if (!response.ok) throw new Error(`Gemini HTTP ${response.status}`);
+    const data = await response.json();
+    const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
     const cleaned = raw.replace(/^```json\s*/i, '').replace(/```$/g, '').trim();
     return JSON.parse(cleaned);
   } catch {
@@ -191,10 +221,10 @@ async function extractEmailAndSummary(text, url) {
 }
 
 /* ========== Trello card ========== */
-async function createTrelloCard(lead, query) {
-  const apiKey = process.env.TRELLO_API_KEY;
-  const token = process.env.TRELLO_TOKEN;
-  const listId = process.env.TRELLO_LIST_ID;
+async function createTrelloCard(lead, query, env) {
+  const apiKey = env.TRELLO_API_KEY;
+  const token = env.TRELLO_TOKEN;
+  const listId = env.TRELLO_LIST_ID;
   if (!apiKey || !token || !listId) throw new Error('Credenciais do Trello não configuradas.');
 
   const sections = [];
@@ -227,9 +257,15 @@ async function createTrelloCard(lead, query) {
   })}`);
 
   const desc = sections.join('\n');
-  const response = await axios.post('https://api.trello.com/1/cards', null, {
-    params: { key: apiKey, token, idList: listId, name: lead.nome_empresa, desc, pos: 'bottom' },
-    timeout: 10000
+  const params = new URLSearchParams({
+    key: apiKey, token, idList: listId, name: lead.nome_empresa, desc, pos: 'bottom'
   });
-  return response.data;
+  const response = await fetch(`https://api.trello.com/1/cards?${params}`, {
+    method: 'POST',
+    signal: AbortSignal.timeout(10000)
+  });
+  if (!response.ok) {
+    throw new Error(`Trello recusou a criação do card (HTTP ${response.status}).`);
+  }
+  return response.json();
 }

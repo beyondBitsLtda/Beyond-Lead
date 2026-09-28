@@ -1,9 +1,7 @@
-// /api/trello-stats.js
+// /worker/src/trello-stats.js
 // Puxa todo o board do Trello, categoriza por estágio do funil,
 // parseia valores R$, separa faturamento POR MÊS (etiqueta "MÊS DE X")
 // e devolve tudo para o dashboard.
-
-import axios from 'axios';
 
 const MONTH_NAMES = [
   'janeiro', 'fevereiro', 'marco', 'abril', 'maio', 'junho',
@@ -15,39 +13,39 @@ const MONTH_SHORT = [
   'jul', 'ago', 'set', 'out', 'nov', 'dez'
 ];
 
-export default async function handler(req, res) {
-  if (req.method !== 'GET') {
-    res.setHeader('Allow', 'GET');
-    return res.status(405).json({ error: 'Método não permitido. Use GET.' });
-  }
+const respond = (status, data) => ({ status, data });
 
-  const apiKey = process.env.TRELLO_API_KEY;
-  const token = process.env.TRELLO_TOKEN;
-  const boardId = process.env.TRELLO_BOARD_ID;
+export async function trelloStats(body, env) {
+  const apiKey = env.TRELLO_API_KEY;
+  const token = env.TRELLO_TOKEN;
+  const boardId = env.TRELLO_BOARD_ID;
 
   if (!apiKey || !token || !boardId) {
-    return res.status(500).json({
+    return respond(500, {
       error: 'Faltando TRELLO_API_KEY, TRELLO_TOKEN ou TRELLO_BOARD_ID.'
     });
   }
 
   try {
-    const url = `https://api.trello.com/1/boards/${boardId}`;
-    const { data } = await axios.get(url, {
-      params: {
-        key: apiKey,
-        token,
-        lists: 'open',
-        list_fields: 'name,pos',
-        cards: 'open',
-        card_fields: 'name,desc,idList,idLabels,shortUrl,dateLastActivity,due',
-        card_checklists: 'all',
-        checklist_fields: 'name',
-        labels: 'all',
-        label_fields: 'name,color'
-      },
-      timeout: 20000
+    const params = new URLSearchParams({
+      key: apiKey,
+      token,
+      lists: 'open',
+      list_fields: 'name,pos',
+      cards: 'open',
+      card_fields: 'name,desc,idList,idLabels,shortUrl,dateLastActivity,due',
+      card_checklists: 'all',
+      checklist_fields: 'name',
+      labels: 'all',
+      label_fields: 'name,color'
     });
+    const response = await fetch(`https://api.trello.com/1/boards/${boardId}?${params}`, {
+      signal: AbortSignal.timeout(20000)
+    });
+    if (!response.ok) {
+      throw new Error(`Trello HTTP ${response.status}: ${(await response.text()).slice(0, 200)}`);
+    }
+    const data = await response.json();
 
     const lists = data.lists || [];
     const cards = data.cards || [];
@@ -228,7 +226,7 @@ export default async function handler(req, res) {
     // série do gráfico: últimos 6 meses da linha do tempo (a partir de hoje)
     const monthlyRevenueSeries = buildMonthlySeries(monthBuckets, 6, now);
 
-    return res.status(200).json({
+    return respond(200, {
       success: true,
       updatedAt: now.toISOString(),
 
@@ -274,10 +272,10 @@ export default async function handler(req, res) {
     });
   } catch (error) {
     console.error('[/api/trello-stats] erro:', error.message);
-    return res.status(502).json({
+    return respond(502, {
       success: false,
       error: 'Falha ao consultar o Trello.',
-      details: error.response?.data || error.message
+      details: error.message
     });
   }
 }

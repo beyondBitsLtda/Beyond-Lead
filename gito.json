@@ -9,14 +9,48 @@
     "responsavel": "Brayan Rodrigues",
     "equipe": "Beyond Bits"
   },
-  "versao": "0.1.0",
-  "atualizadoEm": "2026-09-27",
+  "versao": "0.1.1",
+  "atualizadoEm": "2026-09-28",
   "compilacao": {
-    "numero": 1,
-    "data": "2026-09-27",
+    "numero": 3,
+    "data": "2026-09-28",
     "artefato": ""
   },
   "historico": [
+    {
+      "versao": "0.1.1",
+      "data": "2026-09-28",
+      "branch": "main",
+      "tipo": "correcao",
+      "resumo": "Publicação da correção do deploy: front no GitHub Pages e API no Cloudflare Workers.",
+      "itens": [
+        "Junta na main a correção da branch Issues_0.1.0 (versão 0.1.1-issues_0.1.0.1).",
+        "Front-end publicado no GitHub Pages a partir da pasta public/, com caminhos relativos para CSS e JS.",
+        "API (busca, processamento de lead e estatísticas do Trello) publicada no Cloudflare Workers, com as chaves como secrets."
+      ],
+      "issues": [
+        "BEYOND-0001"
+      ]
+    },
+    {
+      "versao": "0.1.1-issues_0.1.0.1",
+      "data": "2026-09-28",
+      "branch": "Issues_0.1.0",
+      "tipo": "correcao",
+      "resumo": "Corrige o site quebrado no GitHub Pages: estilos voltam a carregar e a API passa a rodar no Cloudflare Workers.",
+      "itens": [
+        "O HTML carregava style.css e app.js com caminho absoluto (/style.css); no GitHub Pages o site fica em /Beyond-Lead/, então os arquivos davam 404 e a página ficava sem estilo. Agora os caminhos são relativos.",
+        "O GitHub Pages passa a publicar a pasta public/ por um workflow do GitHub Actions (antes publicava a raiz, com cópias antigas do front).",
+        "As funções de busca, processamento de lead e estatísticas do Trello saíram da Vercel e foram para um Cloudflare Worker (pasta worker/), porque o GitHub Pages não executa back-end.",
+        "As chaves do Trello, Serper e Gemini ficam como secrets do Worker, enviadas pelo workflow a partir dos secrets do GitHub; nada vai para o navegador.",
+        "O endereço da API fica configurável em public/config.js; o Worker só aceita chamadas do navegador vindas das origens em ALLOWED_ORIGINS (CORS).",
+        "A leitura do site do lead usa o HTMLRewriter do Workers no lugar do cheerio, e a verificação de certificado HTTPS deixa de ser desligada.",
+        "Removidos o vercel.json, o chat de IA legado (api/chat.js) e as cópias antigas do front na raiz; axios e cheerio deixam de ser dependências."
+      ],
+      "issues": [
+        "BEYOND-0001"
+      ]
+    },
     {
       "versao": "0.1.0",
       "data": "2026-09-27",
@@ -53,24 +87,22 @@
         "Não move cards entre colunas nem edita cards existentes no Trello (só cria cards novos e lê o board).",
         "Não sincroniza templates de mensagem entre pessoas ou navegadores (ficam no localStorage de cada navegador).",
         "Não integra com CRM ou ERP além do Trello.",
-        "O chat de IA para estratégias de prospecção foi retirado da tela (o arquivo api/chat.js ainda existe, mas não é usado)."
+        "Não tem chat de IA para estratégias de prospecção (o recurso foi retirado e o código removido)."
       ]
     },
     "stack": [
       "HTML5, CSS3 e JavaScript puro (sem framework) no front-end; gráficos desenhados com HTML/CSS, sem biblioteca de gráficos",
       "Google Fonts: Space Grotesk e Inter",
-      "Node.js >= 18 (ES Modules) nas funções serverless",
-      "Vercel Serverless Functions (pasta api/)",
-      "axios ^1.7.7 (chamadas HTTP às APIs externas)",
-      "cheerio ^1.0.0 (leitura e limpeza do HTML dos sites dos leads)",
-      "Vercel CLI (vercel dev / vercel deploy --prod)"
+      "Cloudflare Workers (JavaScript ES Modules, fetch nativo, HTMLRewriter), sem dependências de npm",
+      "GitHub Pages (front-end estático)",
+      "GitHub Actions: actions/deploy-pages (front) e cloudflare/wrangler-action v3 (API)"
     ],
     "arquitetura": {
-      "resumo": "Aplicação web de página única hospedada na Vercel. O front-end estático (public/index.html, public/style.css, public/app.js) chama quatro endpoints serverless da própria Vercel: POST /api/search consulta a Serper Places (Google Maps) e devolve os negócios encontrados; o navegador aplica os filtros e envia cada lead, um por vez, para POST /api/process-lead, que faz a deduplicação na lista de alvos do Trello, lê o site da empresa com cheerio, pede ao Google Gemini (gemini-1.5-flash) o e-mail e o resumo e cria o card no Trello; GET /api/trello-stats lê o board inteiro do Trello (colunas, cards, etiquetas e checklists), classifica as colunas por nome em etapas do funil, extrai valores em R$ e metas e devolve o JSON consolidado do dashboard. Não há banco de dados: o board do Trello é a fonte e o destino dos dados; o navegador guarda apenas os templates de WhatsApp e o mês selecionado no localStorage. As chaves das APIs ficam em variáveis de ambiente do projeto na Vercel (SERPER_API_KEY, GEMINI_API_KEY, TRELLO_API_KEY, TRELLO_TOKEN, TRELLO_LIST_ID, TRELLO_BOARD_ID) e nunca vão para o navegador. Tempo máximo das funções (vercel.json): process-lead 60 s, search 30 s, trello-stats 30 s. Os arquivos app.js, index.html, style.css e trello-stats.js na raiz são versões antigas duplicadas; a versão servida é a da pasta public/ e das funções em api/.",
+      "resumo": "Aplicação web de página única. O front-end estático (public/index.html, public/style.css, public/config.js, public/app.js) é publicado no GitHub Pages e chama três endpoints de um Cloudflare Worker (worker/src/index.js), cujo endereço fica em public/config.js (apiBase): POST /api/search consulta a Serper Places (Google Maps) e devolve os negócios encontrados; o navegador aplica os filtros e envia cada lead, um por vez, para POST /api/process-lead, que faz a deduplicação na lista de alvos do Trello, lê o site da empresa com o HTMLRewriter, pede ao Google Gemini (gemini-1.5-flash) o e-mail e o resumo e cria o card no Trello; GET /api/trello-stats lê o board inteiro do Trello (colunas, cards, etiquetas e checklists), classifica as colunas por nome em etapas do funil, extrai valores em R$ e metas e devolve o JSON consolidado do dashboard. O Worker só libera CORS para as origens em ALLOWED_ORIGINS (worker/wrangler.toml); isso restringe o uso pelo navegador, mas não é autenticação. Não há banco de dados: o board do Trello é a fonte e o destino dos dados; o navegador guarda apenas os templates de WhatsApp e o mês selecionado no localStorage. As chaves (SERPER_API_KEY, GEMINI_API_KEY, TRELLO_API_KEY, TRELLO_TOKEN, TRELLO_LIST_ID, TRELLO_BOARD_ID) ficam nos secrets do repositório no GitHub e são gravadas como secrets do Worker pelo workflow de deploy; nunca vão para o navegador. Deploy automático a cada push na main: .github/workflows/pages.yml (front) e .github/workflows/worker.yml (API).",
       "diagramas": [
         {
           "titulo": "Arquitetura e fluxo de dados",
-          "mermaid": "flowchart LR\n  U[Usuário no navegador] --> FE[Front-end estático<br/>public/index.html + app.js + style.css]\n  FE -->|localStorage| LS[(Templates WhatsApp<br/>e mês selecionado)]\n  FE -->|POST /api/search| S[api/search.js]\n  FE -->|POST /api/process-lead| P[api/process-lead.js]\n  FE -->|GET /api/trello-stats| T[api/trello-stats.js]\n  FE -->|link wa.me| W[WhatsApp]\n  subgraph Vercel[Vercel - Serverless Functions Node.js]\n    S\n    P\n    T\n  end\n  S -->|Places API| SP[Serper.dev<br/>Google Maps]\n  P -->|dedup: lê cards da lista de alvos| TR[(Trello<br/>board do funil)]\n  P -->|scrape HTML com cheerio| SITE[Site da empresa]\n  P -->|e-mail + resumo| G[Google Gemini<br/>gemini-1.5-flash]\n  P -->|cria card| TR\n  T -->|lê colunas, cards, etiquetas e checklists| TR"
+          "mermaid": "flowchart LR\n  U[Usuário no navegador] --> FE[Front-end estático no GitHub Pages<br/>public/index.html + config.js + app.js + style.css]\n  FE -->|localStorage| LS[(Templates WhatsApp<br/>e mês selecionado)]\n  FE -->|POST /api/search| S[search.js]\n  FE -->|POST /api/process-lead| P[process-lead.js]\n  FE -->|GET /api/trello-stats| T[trello-stats.js]\n  FE -->|link wa.me| W[WhatsApp]\n  subgraph CF[Cloudflare Worker beyond-lead-api - CORS por ALLOWED_ORIGINS]\n    S\n    P\n    T\n  end\n  GH[GitHub Actions] -->|deploy + secrets| CF\n  GH -->|deploy public/| FE\n  S -->|Places API| SP[Serper.dev<br/>Google Maps]\n  P -->|dedup: lê cards da lista de alvos| TR[(Trello<br/>board do funil)]\n  P -->|HTML via HTMLRewriter| SITE[Site da empresa]\n  P -->|e-mail + resumo| G[Google Gemini<br/>gemini-1.5-flash]\n  P -->|cria card| TR\n  T -->|lê colunas, cards, etiquetas e checklists| TR"
         },
         {
           "titulo": "Fluxo da prospecção (um lead)",
@@ -80,8 +112,14 @@
     },
     "hospedagem": [
       {
-        "ambiente": "Produção",
-        "onde": "Vercel (projeto ligado ao repositório GitHub beyondBitsLtda/Beyond-Lead; deploy automático a cada push na main)",
+        "ambiente": "Produção — front-end",
+        "onde": "GitHub Pages (repositório beyondBitsLtda/Beyond-Lead, pasta public/, publicado pelo workflow .github/workflows/pages.yml)",
+        "url": "https://beyondbitsltda.github.io/Beyond-Lead/",
+        "verificar": true
+      },
+      {
+        "ambiente": "Produção — API",
+        "onde": "Cloudflare Workers (Worker beyond-lead-api, publicado pelo workflow .github/workflows/worker.yml)",
         "url": "",
         "verificar": false
       }
@@ -90,17 +128,17 @@
     "integracoes": [
       {
         "nome": "Serper.dev — Places API",
-        "descricao": "Busca de empresas no Google Maps (nome, endereço, telefone, site, categoria, nota, avaliações, coordenadas, placeId). Usada por api/search.js. Chave em SERPER_API_KEY.",
+        "descricao": "Busca de empresas no Google Maps (nome, endereço, telefone, site, categoria, nota, avaliações, coordenadas, placeId). Usada por worker/src/search.js. Chave no secret SERPER_API_KEY.",
         "url": "https://google.serper.dev/places"
       },
       {
         "nome": "Google Gemini API (gemini-1.5-flash)",
-        "descricao": "Extrai e-mail comercial e resumo do negócio a partir do texto do site do lead. Usada por api/process-lead.js (e pelo api/chat.js legado). Chave em GEMINI_API_KEY.",
+        "descricao": "Extrai e-mail comercial e resumo do negócio a partir do texto do site do lead. Usada por worker/src/process-lead.js. Chave no secret GEMINI_API_KEY.",
         "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
       },
       {
         "nome": "Trello REST API",
-        "descricao": "Fonte e destino dos dados. api/process-lead.js lê a lista de alvos (dedup) e cria cards nela (TRELLO_LIST_ID); api/trello-stats.js lê o board inteiro (TRELLO_BOARD_ID) para o dashboard. Credenciais em TRELLO_API_KEY e TRELLO_TOKEN.",
+        "descricao": "Fonte e destino dos dados. worker/src/process-lead.js lê a lista de alvos (dedup) e cria cards nela (TRELLO_LIST_ID); worker/src/trello-stats.js lê o board inteiro (TRELLO_BOARD_ID) para o dashboard. Credenciais nos secrets TRELLO_API_KEY e TRELLO_TOKEN.",
         "url": "https://api.trello.com/1"
       },
       {
@@ -122,6 +160,10 @@
       {
         "titulo": "Documentação (README)",
         "url": "https://github.com/beyondBitsLtda/Beyond-Lead/blob/main/README.md"
+      },
+      {
+        "titulo": "Deploys (GitHub Actions)",
+        "url": "https://github.com/beyondBitsLtda/Beyond-Lead/actions"
       }
     ],
     "contatos": [

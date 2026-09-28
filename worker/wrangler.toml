@@ -1,0 +1,11 @@
+# Back-end do Beyond-Lead no Cloudflare Workers.
+# Secrets (NUNCA neste arquivo): SERPER_API_KEY, GEMINI_API_KEY, TRELLO_API_KEY,
+# TRELLO_TOKEN, TRELLO_LIST_ID, TRELLO_BOARD_ID. São enviados pelo workflow
+# .github/workflows/worker.yml a partir dos secrets do repositório no GitHub.
+name = "beyond-lead-api"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+
+[vars]
+# Origens que podem chamar a API pelo navegador (separadas por vírgula).
+ALLOWED_ORIGINS = "https://beyondbitsltda.github.io"

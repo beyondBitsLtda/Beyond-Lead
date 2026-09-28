@@ -5,6 +5,9 @@
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => document.querySelectorAll(sel);
 
+  // Endereço do back-end (Cloudflare Worker), definido em config.js. Vazio = mesmo domínio da página.
+  const API_BASE = ((window.BEYOND_CONFIG && window.BEYOND_CONFIG.apiBase) || '').replace(/\/+$/, '');
+
   /* ============================================================
      Sistema de abas
      ============================================================ */
@@ -64,7 +67,7 @@
     $('#last-update').textContent = 'Sincronizando com o Trello…';
 
     try {
-      const res = await fetch('/api/trello-stats');
+      const res = await fetch(`${API_BASE}/api/trello-stats`);
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Falha');
       dashState = data;
@@ -604,7 +607,7 @@
   }
 
   async function callSearch(query, limit) {
-    const res = await fetch('/api/search', {
+    const res = await fetch(`${API_BASE}/api/search`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, limit })
@@ -615,7 +618,7 @@
   }
 
   async function callProcessLead(item, query, dedup) {
-    const res = await fetch('/api/process-lead', {
+    const res = await fetch(`${API_BASE}/api/process-lead`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: item.link, query, place: item.place, dedup })
