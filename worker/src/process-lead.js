@@ -1,5 +1,7 @@
 // /worker/src/process-lead.js
-// Processa 1 lead: dedup no Trello + scrape + Gemini + cria card.
+// Processa 1 lead: dedup no Abacato + scrape + Gemini + cria card no quadro do CRM.
+
+import { abacato, urlDoCard } from './abacato.js';
 
 const BROWSER_HEADERS = {
   'User-Agent':
@@ -21,21 +23,6 @@ export async function processLead(body, env) {
   }
 
   try {
-    if (dedup) {
-      const isDuplicate = await checkDuplicate(place, env);
-      if (isDuplicate) {
-        return {
-          status: 200,
-          data: {
-            success: false,
-            stage: 'dedup',
-            reason: 'Lead já cadastrado no Trello.',
-            duplicate_of: isDuplicate
-          }
-        };
-      }
-    }
-
     const telefoneFormatado = formatPhone(place.telefone);
     const lead = {
       nome_empresa: smartTitleCase(place.nome),
@@ -53,6 +40,21 @@ export async function processLead(body, env) {
       resumo: null
     };
 
+    const cardBase = {
+      titulo: lead.nome_empresa,
+      site: lead.site,
+      origemId: place.placeId || null
+    };
+
+    // Confere ANTES do scrape: não gasta cota do Gemini com lead que já está no quadro.
+    if (dedup) {
+      const conferencia = await abacato(env, '/cards', {
+        method: 'POST',
+        body: { ...cardBase, apenasConferir: true }
+      });
+      if (conferencia.duplicado) return duplicado(conferencia.duplicado, env);
+    }
+
     if (place.site) {
       try {
         const cleanText = await scrapeSite(place.site);
@@ -66,17 +68,22 @@ export async function processLead(body, env) {
       }
     }
 
-    const card = await createTrelloCard(lead, query, env);
+    // `dedup` de novo: entre a conferência e aqui, outra rodada pode ter criado o mesmo lead.
+    const criado = await abacato(env, '/cards', {
+      method: 'POST',
+      body: { ...cardBase, descricao: buildDescription(lead, query), dedup: Boolean(dedup) }
+    });
+    if (criado.duplicado) return duplicado(criado.duplicado, env);
 
     return {
       status: 200,
       data: {
         success: true,
         lead,
-        trello: {
-          id: card.id,
-          name: card.name,
-          url: card.shortUrl || card.url
+        card: {
+          id: criado.card.id,
+          name: criado.card.titulo,
+          url: urlDoCard(env, criado.card.quadroId, criado.card.id)
         }
       }
     };
@@ -126,33 +133,22 @@ function buildWhatsappUrl(phone) {
 }
 
 /* ========== Dedup ========== */
-async function checkDuplicate(place, env) {
-  const apiKey = env.TRELLO_API_KEY;
-  const token = env.TRELLO_TOKEN;
-  const listId = env.TRELLO_LIST_ID;
-  if (!apiKey || !token || !listId) return null;
-
-  try {
-    const params = new URLSearchParams({ key: apiKey, token, fields: 'name,desc,shortUrl' });
-    const response = await fetch(
-      `https://api.trello.com/1/lists/${listId}/cards?${params}`,
-      { signal: AbortSignal.timeout(10000) }
-    );
-    if (!response.ok) throw new Error(`Trello HTTP ${response.status}`);
-    const cards = (await response.json()) || [];
-    const nName = normalize(place.nome);
-    const nSite = place.site ? normalize(place.site) : null;
-    for (const card of cards) {
-      if (normalize(card.name) === nName) return { id: card.id, name: card.name, url: card.shortUrl, match: 'nome' };
-      if (nSite && normalize(card.desc || '').includes(nSite)) return { id: card.id, name: card.name, url: card.shortUrl, match: 'site' };
+function duplicado(d, env) {
+  return {
+    status: 200,
+    data: {
+      success: false,
+      stage: 'dedup',
+      reason: 'Lead já está no quadro do CRM.',
+      duplicate_of: {
+        id: d.id || null,
+        name: d.titulo,
+        url: d.id ? urlDoCard(env, d.quadroId, d.id) : null,
+        match: d.motivo
+      }
     }
-    return null;
-  } catch (err) {
-    console.error('[dedup] erro:', err.message);
-    return null;
-  }
+  };
 }
-function normalize(t) { return (t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'').trim(); }
 
 /* ========== Scrape + Gemini ========== */
 const SCRAPE_MAX_CHARS = 6000;
@@ -220,13 +216,8 @@ async function extractEmailAndSummary(text, url, env) {
   }
 }
 
-/* ========== Trello card ========== */
-async function createTrelloCard(lead, query, env) {
-  const apiKey = env.TRELLO_API_KEY;
-  const token = env.TRELLO_TOKEN;
-  const listId = env.TRELLO_LIST_ID;
-  if (!apiKey || !token || !listId) throw new Error('Credenciais do Trello não configuradas.');
-
+/* ========== Descrição do card ========== */
+function buildDescription(lead, query) {
   const sections = [];
   sections.push('## 📇 Informações de Contato\n');
   const contato = [];
@@ -256,16 +247,5 @@ async function createTrelloCard(lead, query, env) {
     timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
   })}`);
 
-  const desc = sections.join('\n');
-  const params = new URLSearchParams({
-    key: apiKey, token, idList: listId, name: lead.nome_empresa, desc, pos: 'bottom'
-  });
-  const response = await fetch(`https://api.trello.com/1/cards?${params}`, {
-    method: 'POST',
-    signal: AbortSignal.timeout(10000)
-  });
-  if (!response.ok) {
-    throw new Error(`Trello recusou a criação do card (HTTP ${response.status}).`);
-  }
-  return response.json();
+  return sections.join('\n');
 }

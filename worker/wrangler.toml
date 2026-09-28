@@ -1,11 +1,18 @@
 # Back-end do Beyond-Lead no Cloudflare Workers.
-# Secrets (NUNCA neste arquivo): SERPER_API_KEY, GEMINI_API_KEY, TRELLO_API_KEY,
-# TRELLO_TOKEN, TRELLO_LIST_ID, TRELLO_BOARD_ID. São enviados pelo workflow
-# .github/workflows/worker.yml a partir dos secrets do repositório no GitHub.
+# Publicar daqui da máquina:  npm run api:publicar
+#
+# Secrets (NUNCA neste arquivo): SERPER_API_KEY, GEMINI_API_KEY e ABACATO_TOKEN
+# (token de integração do quadro do CRM no Abacato). Gravados uma vez no Worker com:
+#   npx wrangler secret put <NOME> --config worker/wrangler.toml
 name = "beyond-lead-api"
 main = "src/index.js"
 compatibility_date = "2025-09-01"
+# Conta beyondbitsLisa, a mesma do Abacato e da Lisa.
+account_id = "7e4b10d80b08fef1f2fcca583577bf2d"
+workers_dev = true
 
 [vars]
 # Origens que podem chamar a API pelo navegador (separadas por vírgula).
 ALLOWED_ORIGINS = "https://beyondbitsltda.github.io"
+# Onde mora o Abacato (o quadro e a coluna de entrada vêm do token, não daqui).
+ABACATO_URL = "https://abacato.beyond.dev.br"

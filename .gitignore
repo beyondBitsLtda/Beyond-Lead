@@ -1,0 +1,4 @@
+node_modules/
+# Artefatos locais do wrangler podem guardar segredos em texto puro.
+.wrangler/
+.dev.vars

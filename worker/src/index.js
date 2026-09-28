@@ -1,15 +1,15 @@
 // /worker/src/index.js
 // Back-end do Beyond-Lead no Cloudflare Workers: roteia /api/* e aplica CORS.
-// As chaves (Serper, Gemini, Trello) chegam em `env` como secrets do Worker.
+// As chaves (Serper, Gemini, Abacato) chegam em `env` como secrets do Worker.
 
 import { search } from './search.js';
 import { processLead } from './process-lead.js';
-import { trelloStats } from './trello-stats.js';
+import { funilStats } from './funil.js';
 
 const ROUTES = {
   '/api/search': { method: 'POST', handler: search },
   '/api/process-lead': { method: 'POST', handler: processLead },
-  '/api/trello-stats': { method: 'GET', handler: trelloStats }
+  '/api/funil': { method: 'GET', handler: funilStats }
 };
 
 export default {

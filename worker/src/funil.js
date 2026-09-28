@@ -1,7 +1,9 @@
-// /worker/src/trello-stats.js
-// Puxa todo o board do Trello, categoriza por estágio do funil,
+// /worker/src/funil.js
+// Puxa todo o quadro do CRM no Abacato, categoriza por estágio do funil,
 // parseia valores R$, separa faturamento POR MÊS (etiqueta "MÊS DE X")
 // e devolve tudo para o dashboard.
+
+import { abacato, urlDoCard } from './abacato.js';
 
 const MONTH_NAMES = [
   'janeiro', 'fevereiro', 'marco', 'abril', 'maio', 'junho',
@@ -15,37 +17,13 @@ const MONTH_SHORT = [
 
 const respond = (status, data) => ({ status, data });
 
-export async function trelloStats(body, env) {
-  const apiKey = env.TRELLO_API_KEY;
-  const token = env.TRELLO_TOKEN;
-  const boardId = env.TRELLO_BOARD_ID;
-
-  if (!apiKey || !token || !boardId) {
-    return respond(500, {
-      error: 'Faltando TRELLO_API_KEY, TRELLO_TOKEN ou TRELLO_BOARD_ID.'
-    });
+export async function funilStats(body, env) {
+  if (!env.ABACATO_TOKEN) {
+    return respond(500, { error: 'Faltando ABACATO_TOKEN.' });
   }
 
   try {
-    const params = new URLSearchParams({
-      key: apiKey,
-      token,
-      lists: 'open',
-      list_fields: 'name,pos',
-      cards: 'open',
-      card_fields: 'name,desc,idList,idLabels,shortUrl,dateLastActivity,due',
-      card_checklists: 'all',
-      checklist_fields: 'name',
-      labels: 'all',
-      label_fields: 'name,color'
-    });
-    const response = await fetch(`https://api.trello.com/1/boards/${boardId}?${params}`, {
-      signal: AbortSignal.timeout(20000)
-    });
-    if (!response.ok) {
-      throw new Error(`Trello HTTP ${response.status}: ${(await response.text()).slice(0, 200)}`);
-    }
-    const data = await response.json();
+    const data = paraCamposDoCalculo(await abacato(env, '/quadro'), env);
 
     const lists = data.lists || [];
     const cards = data.cards || [];
@@ -271,13 +249,45 @@ export async function trelloStats(body, env) {
       }))
     });
   } catch (error) {
-    console.error('[/api/trello-stats] erro:', error.message);
+    console.error('[/api/funil] erro:', error.message);
     return respond(502, {
       success: false,
-      error: 'Falha ao consultar o Trello.',
+      error: 'Falha ao consultar o Abacato.',
       details: error.message
     });
   }
+}
+
+/* ============================================================
+   Adaptador — quadro do Abacato → campos do cálculo
+   ============================================================ */
+
+// O cálculo acima nasceu lendo o Trello (lists/cards/labels, name/desc/idList...).
+// Traduzir o quadro do Abacato para esses campos mantém a regra de funil, metas e
+// faturamento intacta. O Abacato não guarda "última atividade" por card: a data de
+// referência (mês sem etiqueta e movimentação semanal) passa a ser a de criação.
+function paraCamposDoCalculo(q, env) {
+  return {
+    lists: (q.colunas || []).map((c) => ({ id: c.id, name: c.nome, pos: c.posicao })),
+    labels: (q.etiquetas || []).map((e) => ({ id: e.id, name: e.nome, color: e.cor })),
+    cards: (q.cards || []).map((c) => ({
+      id: c.id,
+      name: c.titulo,
+      desc: c.descricao || '',
+      idList: c.colunaId,
+      idLabels: c.etiquetas || [],
+      shortUrl: urlDoCard(env, q.quadro.id, c.id),
+      dateLastActivity: c.criadoEm,
+      due: c.fimEm,
+      checklists: (c.checklists || []).map((cl) => ({
+        name: cl.titulo,
+        checkItems: (cl.itens || []).map((i) => ({
+          name: i.texto,
+          state: i.feito ? 'complete' : 'incomplete'
+        }))
+      }))
+    }))
+  };
 }
 
 /* ============================================================

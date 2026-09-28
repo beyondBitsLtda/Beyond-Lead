@@ -3,20 +3,38 @@
   "aplicacao": {
     "nome": "Beyond-Lead (Prospect Leads — Central de Operação)",
     "codigo": "BEYOND",
-    "descricao": "Aplicação web para a equipe comercial prospectar empresas no Google Maps, cadastrá-las como cards no Trello e acompanhar o funil de vendas, as metas e o faturamento em um dashboard, com envio de WhatsApp direto da tela.",
+    "descricao": "Aplicação web para a equipe comercial prospectar empresas no Google Maps, cadastrá-las como cards no quadro do CRM no Abacato e acompanhar o funil de vendas, as metas e o faturamento em um dashboard, com envio de WhatsApp direto da tela.",
     "tipo": "Aplicação web",
     "situacao": "em produção",
     "responsavel": "Brayan Rodrigues",
     "equipe": "Beyond Bits"
   },
-  "versao": "0.1.1",
+  "versao": "1.0.0-abacato-crm.1",
   "atualizadoEm": "2026-09-28",
   "compilacao": {
-    "numero": 3,
+    "numero": 4,
     "data": "2026-09-28",
     "artefato": ""
   },
   "historico": [
+    {
+      "versao": "1.0.0-abacato-crm.1",
+      "data": "2026-09-28",
+      "branch": "abacato-crm",
+      "tipo": "quebra",
+      "resumo": "O Trello sai do Beyond-Lead: o dashboard lê e a prospecção cria cards no quadro do CRM no Abacato.",
+      "itens": [
+        "O dashboard (aba Central) passa a ler o quadro do CRM no Abacato em vez do board do Trello; a rota /api/trello-stats vira /api/funil.",
+        "A prospecção cria os cards novos no quadro do CRM, na coluna de entrada definida no Abacato (a de alvos).",
+        "O acesso é por um token de integração do Abacato (secret ABACATO_TOKEN), que abre só o quadro do CRM e só cria card na coluna de entrada; saem os secrets TRELLO_API_KEY, TRELLO_TOKEN, TRELLO_LIST_ID e TRELLO_BOARD_ID.",
+        "A conferência de duplicado agora olha o quadro inteiro (mesmo placeId do Google, mesmo nome ou mesmo site), não só a lista de alvos, e acontece antes de ler o site e chamar o Gemini.",
+        "Os links \"Abrir\" do dashboard e do log de prospecção apontam para o card no Abacato.",
+        "Como o Abacato não guarda \"última atividade\" por card, a data de referência do mês (quando o card não tem etiqueta \"MÊS DE X\") e da movimentação semanal passa a ser a data de criação do card.",
+        "Deploy sem GitHub Actions: o front sai de public/ para a raiz do repositório e é publicado pelo GitHub Pages direto da main (com .nojekyll); a API é publicada da máquina com npm run api:publicar (wrangler, conta beyondbitsLisa da Cloudflare). Os workflows foram removidos.",
+        "API publicada em https://beyond-lead-api.beyondbitslisa.workers.dev e configurada em config.js."
+      ],
+      "issues": []
+    },
     {
       "versao": "0.1.1",
       "data": "2026-09-28",
@@ -65,63 +83,64 @@
   ],
   "ficha": {
     "escopo": {
-      "objetivo": "Centralizar a operação de prospecção comercial: encontrar leads no Google Maps, enriquecer e registrar cada lead no board do Trello e dar visão em tempo real do funil, das metas e do faturamento, apoiando a abordagem por WhatsApp.",
+      "objetivo": "Centralizar a operação de prospecção comercial: encontrar leads no Google Maps, enriquecer e registrar cada lead no quadro do CRM no Abacato e dar visão em tempo real do funil, das metas e do faturamento, apoiando a abordagem por WhatsApp.",
       "inclui": [
         "Aba Prospecção: busca de empresas no Google Maps por termo livre (ex.: \"clínicas odontológicas em Curitiba\"), com até 20 resultados por busca, via Serper Places.",
         "Filtros da prospecção: exigir telefone, exigir site e nota mínima no Google.",
-        "Deduplicação opcional: não cria card se já houver um com o mesmo nome ou o mesmo site na lista de alvos do Trello.",
+        "Deduplicação opcional: não cria card se já houver no quadro do CRM um com o mesmo placeId do Google, o mesmo nome ou o mesmo site (conferido antes do enriquecimento, para não gastar cota do Gemini).",
         "Enriquecimento do lead: leitura do site da empresa e extração de e-mail comercial e resumo do negócio pelo Google Gemini.",
-        "Criação automática do card na lista \"Alvos (Backlog da Semana)\" do Trello, com telefone formatado, link de WhatsApp, endereço, site, Google Maps, avaliação, categoria, resumo, termo de busca e data da prospecção.",
+        "Criação automática do card na coluna de entrada do quadro do CRM no Abacato (a de alvos), com telefone formatado, link de WhatsApp, endereço, site, Google Maps, avaliação, categoria, resumo, termo de busca e data da prospecção.",
         "Log em tempo real, barra de progresso e resumo (criados, duplicados, falhas, tempo) de cada rodada de prospecção.",
-        "Aba Central: dashboard lido em tempo real do board do Trello, classificando as colunas em etapas do funil (Alvos, Abordagem, Diagnóstico, Proposta, Fechado, Perdido, Follow-up, Tickets).",
+        "Aba Central: dashboard lido em tempo real do quadro do CRM no Abacato, classificando as colunas em etapas do funil (Alvos, Abordagem, Diagnóstico, Proposta, Fechado, Perdido, Follow-up, Tickets).",
         "KPIs: leads no funil, em abordagem, fechados, taxa de conversão e faturamento do mês e do ano.",
-        "Faturamento por mês: soma os valores em R$ escritos nos cards fechados (nome, descrição e checklists), agrupando pela etiqueta \"MÊS DE X\", pelo nome do card ou pela data da última atividade.",
-        "Metas: meta da semana (progresso do checklist do card \"Metas da Semana\") e meta mensal (geral ou por mês) lidas da coluna de metas do Trello.",
+        "Faturamento por mês: soma os valores em R$ escritos nos cards fechados (nome, descrição e checklists), agrupando pela etiqueta \"MÊS DE X\", pelo nome do card ou pela data de criação do card.",
+        "Metas: meta da semana (progresso do checklist do card \"Metas da Semana\") e meta mensal (geral ou por mês) lidas da coluna de metas do quadro do CRM.",
         "Gráficos de funil, faturamento dos últimos 6 meses, distribuição por etiqueta e movimentação das últimas 8 semanas.",
         "Lista \"Abordagem HOJE\" com botão de WhatsApp (link wa.me) e templates de mensagem com a variável {{nome_empresa}}, salvos no navegador."
       ],
       "naoInclui": [
         "Não tem login nem controle de acesso: qualquer pessoa com a URL usa a aplicação.",
         "Não envia WhatsApp automaticamente: apenas abre o wa.me com a mensagem pronta; o envio é manual.",
-        "Não tem banco de dados próprio nem histórico fora do Trello.",
-        "Não move cards entre colunas nem edita cards existentes no Trello (só cria cards novos e lê o board).",
+        "Não tem banco de dados próprio: os dados ficam no quadro do CRM no Abacato.",
+        "Não move cards entre colunas nem edita cards existentes no Abacato (só cria cards novos na coluna de entrada e lê o quadro).",
         "Não sincroniza templates de mensagem entre pessoas ou navegadores (ficam no localStorage de cada navegador).",
-        "Não integra com CRM ou ERP além do Trello.",
-        "Não tem chat de IA para estratégias de prospecção (o recurso foi retirado e o código removido)."
+        "Não integra com o Trello nem com outro CRM ou ERP além do Abacato.",
+        "Não tem chat de IA para estratégias de prospecção (o recurso foi retirado e o código removido).",
+        "Não lê responsáveis, membros, links nem anexos dos cards: a integração do Abacato não entrega esses dados."
       ]
     },
     "stack": [
       "HTML5, CSS3 e JavaScript puro (sem framework) no front-end; gráficos desenhados com HTML/CSS, sem biblioteca de gráficos",
       "Google Fonts: Space Grotesk e Inter",
       "Cloudflare Workers (JavaScript ES Modules, fetch nativo, HTMLRewriter), sem dependências de npm",
-      "GitHub Pages (front-end estático)",
-      "GitHub Actions: actions/deploy-pages (front) e cloudflare/wrangler-action v3 (API)"
+      "GitHub Pages (front-end estático, publicado da raiz da main)",
+      "Wrangler 4 (devDependency) para publicar a API: npm run api:publicar"
     ],
     "arquitetura": {
-      "resumo": "Aplicação web de página única. O front-end estático (public/index.html, public/style.css, public/config.js, public/app.js) é publicado no GitHub Pages e chama três endpoints de um Cloudflare Worker (worker/src/index.js), cujo endereço fica em public/config.js (apiBase): POST /api/search consulta a Serper Places (Google Maps) e devolve os negócios encontrados; o navegador aplica os filtros e envia cada lead, um por vez, para POST /api/process-lead, que faz a deduplicação na lista de alvos do Trello, lê o site da empresa com o HTMLRewriter, pede ao Google Gemini (gemini-1.5-flash) o e-mail e o resumo e cria o card no Trello; GET /api/trello-stats lê o board inteiro do Trello (colunas, cards, etiquetas e checklists), classifica as colunas por nome em etapas do funil, extrai valores em R$ e metas e devolve o JSON consolidado do dashboard. O Worker só libera CORS para as origens em ALLOWED_ORIGINS (worker/wrangler.toml); isso restringe o uso pelo navegador, mas não é autenticação. Não há banco de dados: o board do Trello é a fonte e o destino dos dados; o navegador guarda apenas os templates de WhatsApp e o mês selecionado no localStorage. As chaves (SERPER_API_KEY, GEMINI_API_KEY, TRELLO_API_KEY, TRELLO_TOKEN, TRELLO_LIST_ID, TRELLO_BOARD_ID) ficam nos secrets do repositório no GitHub e são gravadas como secrets do Worker pelo workflow de deploy; nunca vão para o navegador. Deploy automático a cada push na main: .github/workflows/pages.yml (front) e .github/workflows/worker.yml (API).",
+      "resumo": "Aplicação web de página única. O front-end estático (index.html, style.css, config.js e app.js, na raiz do repositório) é publicado no GitHub Pages e chama três endpoints de um Cloudflare Worker (worker/src/index.js), cujo endereço fica em config.js (apiBase: https://beyond-lead-api.beyondbitslisa.workers.dev): POST /api/search consulta a Serper Places (Google Maps) e devolve os negócios encontrados; o navegador aplica os filtros e envia cada lead, um por vez, para POST /api/process-lead, que pergunta ao Abacato se o lead já está no quadro do CRM, lê o site da empresa com o HTMLRewriter, pede ao Google Gemini (gemini-1.5-flash) o e-mail e o resumo e cria o card no Abacato; GET /api/funil lê o quadro do CRM inteiro no Abacato (colunas, cards, etiquetas e checklists), classifica as colunas por nome em etapas do funil, extrai valores em R$ e metas e devolve o JSON consolidado do dashboard. A conversa com o Abacato é pela API de integração dele (/api/integracoes/quadro e /api/integracoes/cards), com um token de integração (secret ABACATO_TOKEN) que abre só o quadro do CRM e só cria card na coluna de entrada; qual quadro e qual coluna é decidido no Abacato, na criação do token. O Worker só libera CORS para as origens em ALLOWED_ORIGINS (worker/wrangler.toml); isso restringe o uso pelo navegador, mas não é autenticação. O Beyond-Lead não tem banco próprio: os dados ficam no Postgres do Abacato; o navegador guarda apenas os templates de WhatsApp e o mês selecionado no localStorage. As chaves (SERPER_API_KEY, GEMINI_API_KEY, ABACATO_TOKEN) são secrets do Worker, gravados com wrangler secret put; nunca vão para o navegador nem para o repositório. Não há GitHub Actions: o front é publicado pelo GitHub Pages direto da raiz da main (Deploy from branch, com .nojekyll) e a API é publicada da máquina com npm run api:publicar (wrangler, conta beyondbitsLisa da Cloudflare).",
       "diagramas": [
         {
           "titulo": "Arquitetura e fluxo de dados",
-          "mermaid": "flowchart LR\n  U[Usuário no navegador] --> FE[Front-end estático no GitHub Pages<br/>public/index.html + config.js + app.js + style.css]\n  FE -->|localStorage| LS[(Templates WhatsApp<br/>e mês selecionado)]\n  FE -->|POST /api/search| S[search.js]\n  FE -->|POST /api/process-lead| P[process-lead.js]\n  FE -->|GET /api/trello-stats| T[trello-stats.js]\n  FE -->|link wa.me| W[WhatsApp]\n  subgraph CF[Cloudflare Worker beyond-lead-api - CORS por ALLOWED_ORIGINS]\n    S\n    P\n    T\n  end\n  GH[GitHub Actions] -->|deploy + secrets| CF\n  GH -->|deploy public/| FE\n  S -->|Places API| SP[Serper.dev<br/>Google Maps]\n  P -->|dedup: lê cards da lista de alvos| TR[(Trello<br/>board do funil)]\n  P -->|HTML via HTMLRewriter| SITE[Site da empresa]\n  P -->|e-mail + resumo| G[Google Gemini<br/>gemini-1.5-flash]\n  P -->|cria card| TR\n  T -->|lê colunas, cards, etiquetas e checklists| TR"
+          "mermaid": "flowchart LR\n  U[Usuário no navegador] --> FE[Front-end estático no GitHub Pages<br/>index.html + config.js + app.js + style.css]\n  FE -->|localStorage| LS[(Templates WhatsApp<br/>e mês selecionado)]\n  FE -->|POST /api/search| S[search.js]\n  FE -->|POST /api/process-lead| P[process-lead.js]\n  FE -->|GET /api/funil| T[funil.js]\n  FE -->|link wa.me| W[WhatsApp]\n  subgraph CF[Cloudflare Worker beyond-lead-api - CORS por ALLOWED_ORIGINS]\n    S\n    P\n    T\n  end\n  DEV[Máquina do dev<br/>npm run api:publicar] -->|wrangler deploy + secrets| CF\n  GIT[Push na main] -->|Pages: Deploy from branch| FE\n  S -->|Places API| SP[Serper.dev<br/>Google Maps]\n  P -->|HTML via HTMLRewriter| SITE[Site da empresa]\n  P -->|e-mail + resumo| G[Google Gemini<br/>gemini-1.5-flash]\n  P -->|POST /api/integracoes/cards<br/>conferir + criar| AB[Abacato<br/>abacato.beyond.dev.br]\n  T -->|GET /api/integracoes/quadro| AB\n  AB --> DB[(Postgres do Abacato<br/>quadro do CRM)]"
         },
         {
           "titulo": "Fluxo da prospecção (um lead)",
-          "mermaid": "sequenceDiagram\n  participant N as Navegador\n  participant S as /api/search\n  participant P as /api/process-lead\n  participant SP as Serper Places\n  participant TR as Trello\n  participant SI as Site do lead\n  participant G as Gemini\n  N->>S: termo de busca + limite\n  S->>SP: places (gl=br, hl=pt-br)\n  SP-->>S: negócios\n  S-->>N: lista normalizada\n  N->>N: aplica filtros (telefone, site, nota)\n  loop cada lead\n    N->>P: place + termo + dedup\n    opt dedup ligado\n      P->>TR: cards da lista de alvos\n      TR-->>P: nomes e descrições\n    end\n    opt lead tem site\n      P->>SI: GET HTML\n      P->>G: texto do site\n      G-->>P: e-mail + resumo (JSON)\n    end\n    P->>TR: cria card na lista de alvos\n    P-->>N: resultado (criado / duplicado / falha)\n  end"
+          "mermaid": "sequenceDiagram\n  participant N as Navegador\n  participant S as /api/search\n  participant P as /api/process-lead\n  participant SP as Serper Places\n  participant AB as Abacato (integração)\n  participant SI as Site do lead\n  participant G as Gemini\n  N->>S: termo de busca + limite\n  S->>SP: places (gl=br, hl=pt-br)\n  SP-->>S: negócios\n  S-->>N: lista normalizada\n  N->>N: aplica filtros (telefone, site, nota)\n  loop cada lead\n    N->>P: place + termo + dedup\n    opt dedup ligado\n      P->>AB: POST /cards (apenasConferir)\n      AB-->>P: duplicado? (placeId, nome ou site no quadro inteiro)\n    end\n    opt lead tem site\n      P->>SI: GET HTML\n      P->>G: texto do site\n      G-->>P: e-mail + resumo (JSON)\n    end\n    P->>AB: POST /cards (cria na coluna de entrada)\n    P-->>N: resultado (criado / duplicado / falha)\n  end"
         }
       ]
     },
     "hospedagem": [
       {
         "ambiente": "Produção — front-end",
-        "onde": "GitHub Pages (repositório beyondBitsLtda/Beyond-Lead, pasta public/, publicado pelo workflow .github/workflows/pages.yml)",
+        "onde": "GitHub Pages (repositório beyondBitsLtda/Beyond-Lead, raiz da branch main, Deploy from branch)",
         "url": "https://beyondbitsltda.github.io/Beyond-Lead/",
         "verificar": true
       },
       {
         "ambiente": "Produção — API",
-        "onde": "Cloudflare Workers (Worker beyond-lead-api, publicado pelo workflow .github/workflows/worker.yml)",
-        "url": "",
-        "verificar": false
+        "onde": "Cloudflare Workers (Worker beyond-lead-api, conta beyondbitsLisa), publicado com npm run api:publicar",
+        "url": "https://beyond-lead-api.beyondbitslisa.workers.dev/api/funil",
+        "verificar": true
       }
     ],
     "bancoDeDados": [],
@@ -137,13 +156,13 @@
         "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
       },
       {
-        "nome": "Trello REST API",
-        "descricao": "Fonte e destino dos dados. worker/src/process-lead.js lê a lista de alvos (dedup) e cria cards nela (TRELLO_LIST_ID); worker/src/trello-stats.js lê o board inteiro (TRELLO_BOARD_ID) para o dashboard. Credenciais nos secrets TRELLO_API_KEY e TRELLO_TOKEN.",
-        "url": "https://api.trello.com/1"
+        "nome": "Abacato — quadro do CRM (API de integração)",
+        "descricao": "Fonte e destino dos dados. worker/src/funil.js lê o quadro inteiro (GET /api/integracoes/quadro) para o dashboard; worker/src/process-lead.js confere duplicado e cria cards na coluna de entrada (POST /api/integracoes/cards). Acesso por token de integração no secret ABACATO_TOKEN, gerado no Abacato (scripts/criar-integracao.mjs) e limitado ao quadro do CRM.",
+        "url": "https://abacato.beyond.dev.br"
       },
       {
         "nome": "WhatsApp (wa.me)",
-        "descricao": "Links de clique para conversa, gerados no card do Trello e no dashboard com a mensagem do template preenchida. Não usa API do WhatsApp; o envio é manual.",
+        "descricao": "Links de clique para conversa, gerados no card do CRM no Abacato e no dashboard com a mensagem do template preenchida. Não usa API do WhatsApp; o envio é manual.",
         "url": "https://wa.me"
       },
       {
@@ -162,8 +181,8 @@
         "url": "https://github.com/beyondBitsLtda/Beyond-Lead/blob/main/README.md"
       },
       {
-        "titulo": "Deploys (GitHub Actions)",
-        "url": "https://github.com/beyondBitsLtda/Beyond-Lead/actions"
+        "titulo": "Abacato (quadro do CRM)",
+        "url": "https://abacato.beyond.dev.br"
       }
     ],
     "contatos": [

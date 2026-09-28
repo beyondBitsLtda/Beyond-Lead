@@ -4,6 +4,13 @@
   "description": "Central de operação de leads — prospecção, funil, WhatsApp",
   "private": true,
   "type": "module",
+  "scripts": {
+    "api:local": "wrangler dev --config worker/wrangler.toml",
+    "api:publicar": "wrangler deploy --config worker/wrangler.toml"
+  },
+  "devDependencies": {
+    "wrangler": "^4.135.0"
+  },
   "engines": {
     "node": ">=18.x"
   }

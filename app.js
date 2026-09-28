@@ -1,5 +1,5 @@
-// /public/app.js
-// Central de Operação: Trello stats + dashboard + WhatsApp templates + prospecção.
+// /app.js
+// Central de Operação: funil do CRM (Abacato) + dashboard + WhatsApp templates + prospecção.
 
 (() => {
   const $ = (sel) => document.querySelector(sel);
@@ -64,10 +64,10 @@
   async function loadDashboard() {
     refreshBtn.disabled = true;
     refreshBtn.textContent = '↻ Sincronizando…';
-    $('#last-update').textContent = 'Sincronizando com o Trello…';
+    $('#last-update').textContent = 'Sincronizando com o Abacato…';
 
     try {
-      const res = await fetch(`${API_BASE}/api/trello-stats`);
+      const res = await fetch(`${API_BASE}/api/funil`);
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Falha');
       dashState = data;
@@ -387,7 +387,7 @@
           ${c.phone ? `📞 ${escapeHtml(c.phone)}` : '<em>sem telefone</em>'}
         </div>
         <div class="today-actions">
-          <a href="${c.url}" target="_blank" rel="noopener">Trello</a>
+          <a href="${c.url}" target="_blank" rel="noopener">Abacato</a>
           ${c.phone
             ? `<button class="wa-btn" data-action="send" data-name="${escapeAttr(c.name)}" data-phone="${escapeAttr(c.phone)}">💬 WhatsApp</button>`
             : `<button disabled>Sem fone</button>`}
@@ -674,7 +674,7 @@
         const result = await callProcessLead(item, query, filters.dedup);
         if (result.success) {
           ok++;
-          log(`  ✓ Card criado → ${result.trello?.url || 'Trello'}`, 'success');
+          log(`  ✓ Card criado → ${result.card?.url || 'Abacato'}`, 'success');
         } else if (result.stage === 'dedup') {
           duplicated++;
           log('  ↻ Duplicado — pulado.', 'muted');
