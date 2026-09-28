@@ -9,6 +9,67 @@
   const API_BASE = ((window.BEYOND_CONFIG && window.BEYOND_CONFIG.apiBase) || '').replace(/\/+$/, '');
 
   /* ============================================================
+     Chave de acesso da equipe
+     ============================================================ */
+  // Pedida uma vez e guardada no navegador. Sem ela a API recusa tudo (o site é público).
+  const ACESSO_KEY = 'beyond_lead_acesso_v1';
+  let acesso = '';
+  try { acesso = localStorage.getItem(ACESSO_KEY) || ''; } catch {}
+
+  const acessoModal = $('#acesso-modal');
+  const acessoInput = $('#acesso-input');
+  let acessoPendente = null;
+
+  function pedirAcesso(mensagem) {
+    if (acessoPendente) return acessoPendente;
+    $('#acesso-msg').textContent = mensagem || 'Informe a chave de acesso da equipe.';
+    acessoInput.value = '';
+    acessoModal.hidden = false;
+    acessoInput.focus();
+    acessoPendente = new Promise((resolve, reject) => {
+      const fechar = (fn, valor) => {
+        acessoModal.hidden = true;
+        acessoPendente = null;
+        $('#acesso-form').onsubmit = null;
+        $('#acesso-cancel').onclick = null;
+        fn(valor);
+      };
+      $('#acesso-form').onsubmit = (e) => {
+        e.preventDefault();
+        const chave = acessoInput.value.trim();
+        if (!chave) return;
+        acesso = chave;
+        try { localStorage.setItem(ACESSO_KEY, chave); } catch {}
+        fechar(resolve, chave);
+      };
+      $('#acesso-cancel').onclick = () => fechar(reject, new Error('Sem a chave de acesso da equipe.'));
+    });
+    return acessoPendente;
+  }
+
+  /** Toda chamada à API passa por aqui: manda a chave e, se ela faltar ou estiver errada,
+   *  pede de novo e repete o pedido. */
+  async function api(caminho, { method = 'GET', body } = {}) {
+    for (let tentativa = 0; tentativa < 3; tentativa++) {
+      const res = await fetch(`${API_BASE}${caminho}`, {
+        method,
+        headers: {
+          ...(body ? { 'Content-Type': 'application/json' } : {}),
+          'X-Beyond-Acesso': acesso
+        },
+        body: body ? JSON.stringify(body) : undefined
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401 && data.precisaAcesso) {
+        await pedirAcesso(acesso ? 'Chave inválida. Confira e digite de novo.' : data.error);
+        continue;
+      }
+      return { res, data };
+    }
+    throw new Error('Chave de acesso não confirmada.');
+  }
+
+  /* ============================================================
      Sistema de abas
      ============================================================ */
   $$('.tab-btn').forEach((btn) => {
@@ -67,8 +128,7 @@
     $('#last-update').textContent = 'Sincronizando com o Abacato…';
 
     try {
-      const res = await fetch(`${API_BASE}/api/funil`);
-      const data = await res.json();
+      const { res, data } = await api('/api/funil');
       if (!res.ok || !data.success) throw new Error(data.error || 'Falha');
       dashState = data;
       renderDashboard(data);
@@ -607,25 +667,59 @@
   }
 
   async function callSearch(query, limit) {
-    const res = await fetch(`${API_BASE}/api/search`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, limit })
-    });
-    const data = await res.json().catch(() => ({}));
+    const { res, data } = await api('/api/search', { method: 'POST', body: { query, limit } });
     if (!res.ok || data.success === false) throw new Error(data.error || `HTTP ${res.status}`);
     return data;
   }
 
-  async function callProcessLead(item, query, dedup) {
-    const res = await fetch(`${API_BASE}/api/process-lead`, {
+  async function callProcessLead(item, query, dedup, sugestaoLisa = false) {
+    const { res, data } = await api('/api/process-lead', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: item.link, query, place: item.place, dedup })
+      body: { url: item.link, query, place: item.place, dedup, sugestaoLisa }
     });
-    const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
     return data;
+  }
+
+  /** Processa uma fila de leads (dedup + enriquecimento + card no CRM), com log e progresso.
+   *  Serve à prospecção manual e aos leads que a Lisa propôs e a pessoa confirmou. */
+  async function processarFila(items, { query, dedup, sugestaoLisa = false }) {
+    let ok = 0, fail = 0, duplicated = 0;
+    setProgress(0, items.length);
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const idx = i + 1;
+      const nome = item.place?.nome || item.link;
+      log(`[${idx}/${items.length}] ${nome}`, 'info');
+      try {
+        const result = await callProcessLead(item, item.termo || query, dedup, sugestaoLisa);
+        if (result.success) {
+          ok++;
+          log(`  ✓ Card criado → ${result.card?.url || 'Abacato'}`, 'success');
+        } else if (result.stage === 'dedup') {
+          duplicated++;
+          log('  ↻ Duplicado — pulado.', 'muted');
+        } else {
+          fail++;
+          log(`  ⚠ ${result.error || result.reason}`, 'warn');
+        }
+      } catch (err) {
+        fail++;
+        log(`  ❌ ${err.message}`, 'error');
+      }
+      setProgress(idx, items.length);
+    }
+    return { ok, fail, duplicated };
+  }
+
+  function mostrarResumo({ ok, fail, duplicated }, startedAt, total) {
+    const elapsed = Date.now() - startedAt;
+    setProgress(total, total, 'Concluído');
+    log(`🏁 ${ok} criado(s), ${duplicated} duplicado(s), ${fail} falha(s) em ${fmtElapsed(elapsed)}.`, 'success');
+    sumOk.textContent = ok;
+    sumFail.textContent = fail + duplicated;
+    sumTime.textContent = fmtElapsed(elapsed);
+    summaryEl.hidden = false;
   }
 
   async function runProspect() {
@@ -663,39 +757,8 @@
     }
     log(`▸ ${items.length} entrando na fila.`, 'info');
 
-    let ok = 0, fail = 0, duplicated = 0;
-    setProgress(0, items.length);
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      const idx = i + 1;
-      const nome = item.place?.nome || item.link;
-      log(`[${idx}/${items.length}] ${nome}`, 'info');
-      try {
-        const result = await callProcessLead(item, query, filters.dedup);
-        if (result.success) {
-          ok++;
-          log(`  ✓ Card criado → ${result.card?.url || 'Abacato'}`, 'success');
-        } else if (result.stage === 'dedup') {
-          duplicated++;
-          log('  ↻ Duplicado — pulado.', 'muted');
-        } else {
-          fail++;
-          log(`  ⚠ ${result.error || result.reason}`, 'warn');
-        }
-      } catch (err) {
-        fail++;
-        log(`  ❌ ${err.message}`, 'error');
-      }
-      setProgress(idx, items.length);
-    }
-    const elapsed = Date.now() - startedAt;
-    setProgress(items.length, items.length, 'Concluído');
-    log(`🏁 ${ok} criado(s), ${duplicated} duplicado(s), ${fail} falha(s) em ${fmtElapsed(elapsed)}.`, 'success');
-
-    sumOk.textContent = ok;
-    sumFail.textContent = fail + duplicated;
-    sumTime.textContent = fmtElapsed(elapsed);
-    summaryEl.hidden = false;
+    const contagem = await processarFila(items, { query, dedup: filters.dedup });
+    mostrarResumo(contagem, startedAt, items.length);
 
     lockUI(false); running = false;
   }
@@ -715,6 +778,181 @@
     summaryEl.hidden = true;
     progressEl.hidden = true;
     progressFill.style.width = '0%';
+  });
+
+  /* ============================================================
+     LISA — assistente de prospecção
+     ============================================================ */
+  // A Lisa conversa e PROPÕE. Os leads propostos aparecem com caixas de seleção, e só viram
+  // card quando alguém clica em "Criar no CRM" — pelo mesmo processarFila da prospecção manual.
+  const lisaChat = $('#lisa-chat');
+  const lisaForm = $('#lisa-form');
+  const lisaInput = $('#lisa-input');
+  const lisaSend = $('#lisa-send');
+  const lisaPropostas = $('#lisa-propostas');
+  const lisaLeads = $('#lisa-leads');
+  const lisaObs = $('#lisa-obs');
+  const lisaCriar = $('#lisa-criar');
+  const lisaTemplate = $('#lisa-template');
+
+  let lisaMensagens = [];
+  let leadsPropostos = [];
+  let templateProposto = null;
+  let lisaOcupada = false;
+
+  function lisaBolha(quem, texto, extraClass = '') {
+    lisaChat.querySelector('.lisa-empty')?.remove();
+    const el = document.createElement('div');
+    el.className = `lisa-msg ${quem} ${extraClass}`.trim();
+    el.textContent = texto;
+    lisaChat.appendChild(el);
+    lisaChat.scrollTop = lisaChat.scrollHeight;
+    return el;
+  }
+
+  function renderLeadsPropostos(observacao) {
+    lisaPropostas.hidden = leadsPropostos.length === 0;
+    lisaObs.textContent = observacao || '';
+    lisaLeads.innerHTML = leadsPropostos.map((it, i) => {
+      const p = it.place || {};
+      const nota = p.rating ? `★ ${p.rating.toFixed(1)}${p.reviews ? ` (${p.reviews})` : ''}` : 'sem nota';
+      const site = p.site
+        ? `<a href="${escapeAttr(p.site)}" target="_blank" rel="noopener">${escapeHtml(p.site.replace(/^https?:\/\//, '').replace(/\/$/, ''))}</a>`
+        : '<em>sem site</em>';
+      return `
+        <label class="lisa-lead">
+          <input type="checkbox" data-i="${i}" checked />
+          <span class="lisa-lead-info">
+            <strong>${escapeHtml(p.nome || it.title || '—')}</strong>
+            <span class="lisa-lead-meta">${escapeHtml(p.categoria || '')} · ${nota} · ${p.telefone ? '📞 ' + escapeHtml(p.telefone) : 'sem telefone'} · ${site}</span>
+            ${p.endereco ? `<span class="lisa-lead-addr">${escapeHtml(p.endereco)}</span>` : ''}
+          </span>
+        </label>`;
+    }).join('');
+    atualizarBotaoCriar();
+  }
+
+  function selecionados() {
+    return [...lisaLeads.querySelectorAll('input[type="checkbox"]:checked')]
+      .map((c) => leadsPropostos[Number(c.dataset.i)]).filter(Boolean);
+  }
+
+  function atualizarBotaoCriar() {
+    const n = selecionados().length;
+    lisaCriar.disabled = n === 0 || running;
+    lisaCriar.textContent = n ? `Criar ${n} no CRM` : 'Selecione leads';
+  }
+  lisaLeads.addEventListener('change', atualizarBotaoCriar);
+
+  function renderTemplateProposto() {
+    lisaTemplate.hidden = !templateProposto;
+    if (!templateProposto) return;
+    $('#lisa-tpl-nome').textContent = templateProposto.nome;
+    $('#lisa-tpl-texto').textContent = templateProposto.texto;
+  }
+
+  async function perguntarLisa(texto) {
+    if (lisaOcupada || !texto.trim()) return;
+    lisaOcupada = true;
+    lisaSend.disabled = true;
+    lisaMensagens.push({ quem: 'pessoa', texto: texto.trim() });
+    lisaBolha('pessoa', texto.trim());
+    const pensando = lisaBolha('lisa', 'Pensando…', 'pensando');
+
+    try {
+      const { res, data } = await api('/api/lisa', {
+        method: 'POST',
+        body: { mensagens: lisaMensagens, contexto: { leadsEmTela: leadsPropostos } }
+      });
+      pensando.remove();
+      if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+
+      lisaMensagens.push({ quem: 'lisa', texto: data.texto });
+      lisaBolha('lisa', data.texto);
+
+      if (data.propostas?.leads?.length) {
+        leadsPropostos = data.propostas.leads;
+        renderLeadsPropostos(data.propostas.observacao);
+      }
+      if (data.propostas?.template) {
+        templateProposto = data.propostas.template;
+        renderTemplateProposto();
+      }
+    } catch (err) {
+      pensando.remove();
+      lisaMensagens.pop();
+      lisaBolha('lisa', `⚠ ${err.message}`, 'erro');
+    } finally {
+      lisaOcupada = false;
+      lisaSend.disabled = false;
+      lisaInput.focus();
+    }
+  }
+
+  lisaForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const texto = lisaInput.value;
+    lisaInput.value = '';
+    perguntarLisa(texto);
+  });
+  lisaInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); lisaForm.requestSubmit(); }
+  });
+  lisaChat.addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-sugestao]');
+    if (chip) perguntarLisa(chip.dataset.sugestao);
+  });
+
+  $('#lisa-limpar').addEventListener('click', () => {
+    if (lisaOcupada) return;
+    lisaMensagens = [];
+    leadsPropostos = [];
+    templateProposto = null;
+    lisaChat.innerHTML = lisaChat.dataset.vazio;
+    renderLeadsPropostos();
+    renderTemplateProposto();
+  });
+  lisaChat.dataset.vazio = lisaChat.innerHTML;
+
+  $('#lisa-todos').addEventListener('click', () => {
+    const caixas = [...lisaLeads.querySelectorAll('input[type="checkbox"]')];
+    const marcar = caixas.some((c) => !c.checked);
+    caixas.forEach((c) => { c.checked = marcar; });
+    atualizarBotaoCriar();
+  });
+
+  lisaCriar.addEventListener('click', async () => {
+    const itens = selecionados();
+    if (!itens.length || running) return;
+    running = true;
+    lockUI(true);
+    lisaCriar.disabled = true;
+    summaryEl.hidden = true;
+    const startedAt = Date.now();
+    log(`✦ Lisa: ${itens.length} lead(s) confirmado(s) para o CRM.`, 'info');
+
+    const contagem = await processarFila(itens, { query: 'Sugestão da Lisa', dedup: dedupInput.checked, sugestaoLisa: true });
+    mostrarResumo(contagem, startedAt, itens.length);
+
+    lisaBolha('lisa', `Feito: ${contagem.ok} criado(s) no CRM, ${contagem.duplicated} já existia(m), ${contagem.fail} falha(s). O detalhe está no log.`, 'sistema');
+    leadsPropostos = leadsPropostos.filter((it) => !itens.includes(it));
+    renderLeadsPropostos(lisaObs.textContent);
+    lockUI(false); running = false;
+    atualizarBotaoCriar();
+  });
+
+  $('#lisa-tpl-salvar').addEventListener('click', () => {
+    if (!templateProposto) return;
+    templates.push({ id: 't' + Date.now(), name: templateProposto.nome, body: templateProposto.texto });
+    saveTemplates(templates);
+    renderTemplates();
+    lisaBolha('lisa', `Template "${templateProposto.nome}" salvo na lista da Central.`, 'sistema');
+    templateProposto = null;
+    renderTemplateProposto();
+  });
+  $('#lisa-tpl-descartar').addEventListener('click', () => {
+    templateProposto = null;
+    renderTemplateProposto();
   });
 
   /* ============================================================

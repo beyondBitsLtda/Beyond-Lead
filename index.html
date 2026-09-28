@@ -178,6 +178,55 @@
       <!-- ABA: PROSPECÇÃO                                              -->
       <!-- ============================================================ -->
       <section class="tab-content" id="tab-prospect">
+        <div class="panel panel-lisa">
+          <div class="panel-head">
+            <h2><span class="lisa-mark">✦</span> Lisa</h2>
+            <div class="panel-head-actions">
+              <span class="panel-tag">assistente de prospecção</span>
+              <button type="button" id="lisa-limpar" class="btn-ghost small">Nova conversa</button>
+            </div>
+          </div>
+
+          <div id="lisa-chat" class="lisa-chat" aria-live="polite">
+            <div class="lisa-empty">
+              <p>Peça à Lisa para buscar empresas, escolher quem abordar ou escrever a mensagem. Ela propõe; quem cria no CRM é você.</p>
+              <div class="lisa-chips">
+                <button type="button" class="lisa-chip" data-sugestao="Busca 10 clínicas odontológicas em Curitiba com nota acima de 4.5 e me propõe as melhores para abordar.">Clínicas em Curitiba, nota 4.5+</button>
+                <button type="button" class="lisa-chip" data-sugestao="Quero empresas SEM site: busca academias em Joinville e propõe as que têm telefone.">Academias sem site</button>
+                <button type="button" class="lisa-chip" data-sugestao="Como está o funil este mês? Estamos perto da meta?">Como está o funil?</button>
+                <button type="button" class="lisa-chip" data-sugestao="Escreve um template de primeira abordagem no WhatsApp para restaurantes que ainda não têm site.">Template para restaurantes</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="lisa-propostas" class="lisa-propostas" hidden>
+            <div class="lisa-propostas-head">
+              <strong>Leads propostos pela Lisa</strong>
+              <button type="button" id="lisa-todos" class="btn-ghost small">Marcar/desmarcar todos</button>
+            </div>
+            <p id="lisa-obs" class="lisa-obs"></p>
+            <div id="lisa-leads" class="lisa-leads"></div>
+            <button type="button" id="lisa-criar" class="btn-primary" disabled>Selecione leads</button>
+            <p class="lisa-nota">Os cards são criados com os dados da busca, na coluna de alvos do CRM, conferindo duplicados ("Evitar duplicados" abaixo).</p>
+          </div>
+
+          <div id="lisa-template" class="lisa-template" hidden>
+            <div class="lisa-propostas-head">
+              <strong>Template proposto: <span id="lisa-tpl-nome"></span></strong>
+            </div>
+            <p id="lisa-tpl-texto" class="lisa-tpl-texto"></p>
+            <div class="modal-actions">
+              <button type="button" id="lisa-tpl-descartar" class="btn-ghost small">Descartar</button>
+              <button type="button" id="lisa-tpl-salvar" class="btn-ghost small">Salvar nos templates</button>
+            </div>
+          </div>
+
+          <form id="lisa-form" class="lisa-form" autocomplete="off">
+            <textarea id="lisa-input" rows="2" placeholder="Ex.: busca 15 pet shops em Florianópolis sem site e me propõe os que têm telefone"></textarea>
+            <button type="submit" id="lisa-send" class="btn-primary">Enviar</button>
+          </form>
+        </div>
+
         <div class="panel">
           <div class="panel-head">
             <h2>Buscar novos leads</h2>
@@ -297,6 +346,22 @@
           </a>
         </div>
       </div>
+    </div>
+
+    <!-- Modal da chave de acesso da equipe -->
+    <div class="modal" id="acesso-modal" hidden>
+      <form class="modal-inner" id="acesso-form">
+        <div class="modal-head">
+          <h3>Acesso da equipe</h3>
+        </div>
+        <p class="panel-sub" id="acesso-msg">Informe a chave de acesso da equipe.</p>
+        <label for="acesso-input">Chave de acesso</label>
+        <input type="password" id="acesso-input" autocomplete="current-password" />
+        <div class="modal-actions">
+          <button type="button" class="btn-ghost" id="acesso-cancel">Cancelar</button>
+          <button type="submit" class="btn-primary">Entrar</button>
+        </div>
+      </form>
     </div>
 
     <script src="config.js"></script>

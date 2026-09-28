@@ -3,6 +3,15 @@
 Aplicação de prospecção + central de operação de leads.
 Prospecta empresas via Google Maps (Serper), cadastra no quadro do **CRM** no Abacato,
 lê o funil desse quadro em tempo real e permite enviar WhatsApp direto do dashboard.
+Na aba Prospecção, a **Lisa** (assistente de IA) busca empresas, sugere quem abordar e escreve
+as mensagens — ela propõe, e quem cria os cards no CRM é você.
+
+## Acesso
+
+O site é público (GitHub Pages), então a API exige a **chave de acesso da equipe**: a tela pede
+uma vez e guarda no navegador. A chave é o secret `ACESSO_EQUIPE` do Worker; trocar o secret
+derruba o acesso de todo mundo de uma vez (é assim que se revoga). É uma chave só para a equipe,
+não identifica quem fez o quê.
 
 ## Como está hospedado
 
@@ -34,12 +43,14 @@ Gravadas **uma vez** no Worker, na pasta do projeto. O `wrangler` pede o valor s
 npx wrangler secret put SERPER_API_KEY --config worker/wrangler.toml
 npx wrangler secret put GEMINI_API_KEY --config worker/wrangler.toml
 npx wrangler secret put ABACATO_TOKEN  --config worker/wrangler.toml
+npx wrangler secret put ACESSO_EQUIPE  --config worker/wrangler.toml
 ```
 
 | Secret | Descrição |
 |---|---|
 | `SERPER_API_KEY` | Chave da Serper.dev (busca no Google Maps) |
-| `GEMINI_API_KEY` | Chave do Google Gemini (enriquecimento) |
+| `GEMINI_API_KEY` | Chave do Google Gemini (Lisa e enriquecimento). Aceita várias separadas por vírgula, em `GEMINI_API_KEYS`: a que estourar a cota descansa 5 min |
+| `ACESSO_EQUIPE` | Chave de acesso da equipe, pedida pela tela |
 | `ABACATO_TOKEN` | Token de integração do quadro do CRM no Abacato (`abi_...`, ver abaixo) |
 
 O endereço da API fica em `config.js` (`apiBase`). Se o front for servido de outro domínio,
@@ -68,6 +79,26 @@ Proposta, Fechado/Faturamento, Perdido/Geladeira, Follow-up, Tickets, Metas), so
 em R$ dos cards fechados e agrupa por mês pela etiqueta "MÊS DE X". Como o Abacato não guarda
 "última atividade" por card, a data de referência é a de **criação** do card.
 
+## A Lisa na prospecção
+
+Chat no topo da aba Prospecção (`POST /api/lisa`), com o modelo `gemini-3.6-flash` (o mesmo da
+Lisa do Abacato; troque com a variável `GEMINI_CHAT_MODEL`). Ferramentas:
+
+| ferramenta | o que faz |
+|---|---|
+| `buscar_empresas` | Serper Places, com filtros de nota, telefone, com site e **sem site** |
+| `propor_leads` | põe os leads na tela com caixas de seleção |
+| `ver_funil` | etapas, conversão, faturamento contra a meta, meta da semana |
+| `procurar_no_crm` | se uma empresa já está no quadro do CRM, e em que etapa |
+| `ler_site` | texto do site de um lead, para montar a abordagem |
+| `propor_template` | template de WhatsApp para salvar na lista |
+
+**Ela não cria card.** Os leads propostos só viram card quando alguém marca e clica em
+"Criar no CRM", pelo mesmo caminho da prospecção manual (dedup + enriquecimento). Os dados
+do card vêm do resultado da busca guardado no servidor, nunca do texto do modelo — ela não
+consegue inventar telefone nem site. Cards criados assim levam na descrição a linha
+"Sugerido pela Lisa (IA) e confirmado por uma pessoa".
+
 ## Estrutura
 
 ```
@@ -84,7 +115,10 @@ Beyond-Lead/
 │       ├── search.js       → busca Serper Places
 │       ├── abacato.js      → cliente da API de integração do Abacato
 │       ├── process-lead.js → dedup + scrape + Gemini + card no CRM
-│       └── funil.js        → stats do quadro do CRM
+│       ├── funil.js        → stats do quadro do CRM
+│       ├── lisa.js         → a assistente: instruções, ferramentas e o laço do agente
+│       ├── gemini.js       → cliente do modelo (pool de chaves)
+│       └── acesso.js       → chave de acesso da equipe
 ├── package.json           → scripts api:local e api:publicar (wrangler)
 └── README.md
 ```

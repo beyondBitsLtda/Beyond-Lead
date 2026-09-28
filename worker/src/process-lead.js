@@ -2,6 +2,7 @@
 // Processa 1 lead: dedup no Abacato + scrape + Gemini + cria card no quadro do CRM.
 
 import { abacato, urlDoCard } from './abacato.js';
+import { conversar, textoDe, temModelo } from './gemini.js';
 
 const BROWSER_HEADERS = {
   'User-Agent':
@@ -13,7 +14,7 @@ const BROWSER_HEADERS = {
 };
 
 export async function processLead(body, env) {
-  const { query, place, dedup } = body || {};
+  const { query, place, dedup, sugestaoLisa } = body || {};
 
   if (!place || !place.nome) {
     return {
@@ -71,7 +72,7 @@ export async function processLead(body, env) {
     // `dedup` de novo: entre a conferência e aqui, outra rodada pode ter criado o mesmo lead.
     const criado = await abacato(env, '/cards', {
       method: 'POST',
-      body: { ...cardBase, descricao: buildDescription(lead, query), dedup: Boolean(dedup) }
+      body: { ...cardBase, descricao: buildDescription(lead, query, Boolean(sugestaoLisa)), dedup: Boolean(dedup) }
     });
     if (criado.duplicado) return duplicado(criado.duplicado, env);
 
@@ -154,7 +155,7 @@ function duplicado(d, env) {
 const SCRAPE_MAX_CHARS = 6000;
 
 // Lê o texto visível do <body> com o HTMLRewriter (streaming, nativo do Workers).
-async function scrapeSite(url) {
+export async function scrapeSite(url) {
   const response = await fetch(url, {
     headers: BROWSER_HEADERS,
     redirect: 'follow',
@@ -186,9 +187,7 @@ async function scrapeSite(url) {
 }
 
 async function extractEmailAndSummary(text, url, env) {
-  const apiKey = env.GEMINI_API_KEY;
-  if (!apiKey) return { email: null, resumo: null };
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  if (!temModelo(env)) return { email: null, resumo: null };
   const prompt = [
     `Extraia do texto abaixo (site ${url}) APENAS:`,
     '- email (primeiro e-mail comercial encontrado, ou null)',
@@ -197,19 +196,11 @@ async function extractEmailAndSummary(text, url, env) {
     '', 'Texto:', '"""', text, '"""'
   ].join('\n');
   try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.2, maxOutputTokens: 300, responseMimeType: 'application/json' }
-      }),
-      signal: AbortSignal.timeout(20000)
+    const resposta = await conversar(env, {
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      maxTokens: 300, temperatura: 0.2, json: true
     });
-    if (!response.ok) throw new Error(`Gemini HTTP ${response.status}`);
-    const data = await response.json();
-    const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
-    const cleaned = raw.replace(/^```json\s*/i, '').replace(/```$/g, '').trim();
+    const cleaned = textoDe(resposta).replace(/^```json\s*/i, '').replace(/```$/g, '').trim();
     return JSON.parse(cleaned);
   } catch {
     return { email: null, resumo: null };
@@ -217,7 +208,7 @@ async function extractEmailAndSummary(text, url, env) {
 }
 
 /* ========== Descrição do card ========== */
-function buildDescription(lead, query) {
+function buildDescription(lead, query, sugestaoLisa = false) {
   const sections = [];
   sections.push('## 📇 Informações de Contato\n');
   const contato = [];
@@ -243,6 +234,7 @@ function buildDescription(lead, query) {
 
   sections.push('\n\n---\n');
   sections.push(`🔎 **Termo de busca:** ${query || '—'}`);
+  if (sugestaoLisa) sections.push('🤖 **Sugerido pela Lisa** (IA) e confirmado por uma pessoa no Beyond-Lead.');
   sections.push(`🕒 **Prospectado em:** ${new Date().toLocaleString('pt-BR', {
     timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
   })}`);

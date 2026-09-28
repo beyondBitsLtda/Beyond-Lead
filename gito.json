@@ -9,14 +9,30 @@
     "responsavel": "Brayan Rodrigues",
     "equipe": "Beyond Bits"
   },
-  "versao": "1.0.0",
+  "versao": "1.1.0-lisa-prospeccao.1",
   "atualizadoEm": "2026-09-28",
   "compilacao": {
-    "numero": 5,
+    "numero": 6,
     "data": "2026-09-28",
     "artefato": ""
   },
   "historico": [
+    {
+      "versao": "1.1.0-lisa-prospeccao.1",
+      "data": "2026-09-28",
+      "branch": "lisa-prospeccao",
+      "tipo": "funcionalidade",
+      "resumo": "A Lisa chega à aba Prospecção: busca empresas, sugere quem abordar, escreve mensagens e propõe leads para você criar no CRM.",
+      "itens": [
+        "Chat da Lisa no topo da aba Prospecção, com sugestões prontas (\"clínicas nota 4.5+\", \"academias sem site\", \"como está o funil?\").",
+        "A Lisa busca empresas no Google Maps com filtros (inclusive \"sem site\"), consulta o funil e o CRM, lê o site de um lead e propõe templates de WhatsApp.",
+        "Ela só PROPÕE: os leads aparecem com caixas de seleção e viram card quando alguém clica em \"Criar no CRM\", pelo mesmo caminho da prospecção manual. Os dados vêm da busca real, nunca do texto do modelo.",
+        "Cards criados a partir de sugestão da Lisa levam na descrição \"Sugerido pela Lisa (IA) e confirmado por uma pessoa\".",
+        "Chave de acesso da equipe (secret ACESSO_EQUIPE): a API recusa qualquer pedido sem ela, o que fecha também o dashboard, que antes era público.",
+        "Correção: o enriquecimento de leads usava o modelo gemini-1.5-flash, desativado pelo Google; agora usa o mesmo modelo da Lisa (gemini-3.6-flash), com pool de chaves."
+      ],
+      "issues": []
+    },
     {
       "versao": "1.0.0",
       "data": "2026-09-28",
@@ -109,32 +125,36 @@
         "Faturamento por mês: soma os valores em R$ escritos nos cards fechados (nome, descrição e checklists), agrupando pela etiqueta \"MÊS DE X\", pelo nome do card ou pela data de criação do card.",
         "Metas: meta da semana (progresso do checklist do card \"Metas da Semana\") e meta mensal (geral ou por mês) lidas da coluna de metas do quadro do CRM.",
         "Gráficos de funil, faturamento dos últimos 6 meses, distribuição por etiqueta e movimentação das últimas 8 semanas.",
-        "Lista \"Abordagem HOJE\" com botão de WhatsApp (link wa.me) e templates de mensagem com a variável {{nome_empresa}}, salvos no navegador."
+        "Lista \"Abordagem HOJE\" com botão de WhatsApp (link wa.me) e templates de mensagem com a variável {{nome_empresa}}, salvos no navegador.",
+        "Lisa, assistente de IA na aba Prospecção: busca empresas, consulta funil e CRM, lê sites, sugere abordagens e propõe leads e templates; a criação dos cards é sempre confirmada por uma pessoa.",
+        "Chave de acesso da equipe exigida pela API (dashboard, prospecção e Lisa)."
       ],
       "naoInclui": [
-        "Não tem login nem controle de acesso: qualquer pessoa com a URL usa a aplicação.",
+        "Não tem login individual: o acesso é por uma chave única da equipe (não identifica quem fez o quê).",
         "Não envia WhatsApp automaticamente: apenas abre o wa.me com a mensagem pronta; o envio é manual.",
         "Não tem banco de dados próprio: os dados ficam no quadro do CRM no Abacato.",
         "Não move cards entre colunas nem edita cards existentes no Abacato (só cria cards novos na coluna de entrada e lê o quadro).",
         "Não sincroniza templates de mensagem entre pessoas ou navegadores (ficam no localStorage de cada navegador).",
         "Não integra com o Trello nem com outro CRM ou ERP além do Abacato.",
         "Não tem chat de IA para estratégias de prospecção (o recurso foi retirado e o código removido).",
-        "Não lê responsáveis, membros, links nem anexos dos cards: a integração do Abacato não entrega esses dados."
+        "Não lê responsáveis, membros, links nem anexos dos cards: a integração do Abacato não entrega esses dados.",
+        "A Lisa não cria, move, edita nem apaga cards sozinha; só propõe."
       ]
     },
     "stack": [
       "HTML5, CSS3 e JavaScript puro (sem framework) no front-end; gráficos desenhados com HTML/CSS, sem biblioteca de gráficos",
       "Google Fonts: Space Grotesk e Inter",
-      "Cloudflare Workers (JavaScript ES Modules, fetch nativo, HTMLRewriter), sem dependências de npm",
+      "Cloudflare Workers (JavaScript ES Modules, fetch nativo, HTMLRewriter), sem dependências de npm em produção",
       "GitHub Pages (front-end estático, publicado da raiz da main)",
-      "Wrangler 4 (devDependency) para publicar a API: npm run api:publicar"
+      "Wrangler 4 (devDependency) para publicar a API: npm run api:publicar",
+      "Google Gemini gemini-3.6-flash via API REST com function calling (Lisa) e JSON mode (enriquecimento)"
     ],
     "arquitetura": {
-      "resumo": "Aplicação web de página única. O front-end estático (index.html, style.css, config.js e app.js, na raiz do repositório) é publicado no GitHub Pages e chama três endpoints de um Cloudflare Worker (worker/src/index.js), cujo endereço fica em config.js (apiBase: https://beyond-lead-api.beyondbitslisa.workers.dev): POST /api/search consulta a Serper Places (Google Maps) e devolve os negócios encontrados; o navegador aplica os filtros e envia cada lead, um por vez, para POST /api/process-lead, que pergunta ao Abacato se o lead já está no quadro do CRM, lê o site da empresa com o HTMLRewriter, pede ao Google Gemini (gemini-1.5-flash) o e-mail e o resumo e cria o card no Abacato; GET /api/funil lê o quadro do CRM inteiro no Abacato (colunas, cards, etiquetas e checklists), classifica as colunas por nome em etapas do funil, extrai valores em R$ e metas e devolve o JSON consolidado do dashboard. A conversa com o Abacato é pela API de integração dele (/api/integracoes/quadro e /api/integracoes/cards), com um token de integração (secret ABACATO_TOKEN) que abre só o quadro do CRM e só cria card na coluna de entrada; qual quadro e qual coluna é decidido no Abacato, na criação do token. O Worker só libera CORS para as origens em ALLOWED_ORIGINS (worker/wrangler.toml); isso restringe o uso pelo navegador, mas não é autenticação. O Beyond-Lead não tem banco próprio: os dados ficam no Postgres do Abacato; o navegador guarda apenas os templates de WhatsApp e o mês selecionado no localStorage. As chaves (SERPER_API_KEY, GEMINI_API_KEY, ABACATO_TOKEN) são secrets do Worker, gravados com wrangler secret put; nunca vão para o navegador nem para o repositório. Não há GitHub Actions: o front é publicado pelo GitHub Pages direto da raiz da main (Deploy from branch, com .nojekyll) e a API é publicada da máquina com npm run api:publicar (wrangler, conta beyondbitsLisa da Cloudflare).",
+      "resumo": "Aplicação web de página única. O front-end estático (index.html, style.css, config.js e app.js, na raiz do repositório) é publicado no GitHub Pages e chama quatro endpoints de um Cloudflare Worker (worker/src/index.js), cujo endereço fica em config.js (apiBase: https://beyond-lead-api.beyondbitslisa.workers.dev): POST /api/search consulta a Serper Places (Google Maps) e devolve os negócios encontrados; o navegador aplica os filtros e envia cada lead, um por vez, para POST /api/process-lead, que pergunta ao Abacato se o lead já está no quadro do CRM, lê o site da empresa com o HTMLRewriter, pede ao Google Gemini (gemini-3.6-flash) o e-mail e o resumo e cria o card no Abacato; GET /api/funil lê o quadro do CRM inteiro no Abacato (colunas, cards, etiquetas e checklists), classifica as colunas por nome em etapas do funil, extrai valores em R$ e metas e devolve o JSON consolidado do dashboard; POST /api/lisa roda o laço de agente da Lisa (até 6 rodadas de ferramentas: buscar_empresas, propor_leads, ver_funil, procurar_no_crm, ler_site, propor_template) e devolve o texto e as propostas, que só viram card quando uma pessoa confirma na tela. Toda rota exige a chave de acesso da equipe no cabeçalho X-Beyond-Acesso (secret ACESSO_EQUIPE), conferida antes de qualquer trabalho. A conversa com o Abacato é pela API de integração dele (/api/integracoes/quadro e /api/integracoes/cards), com um token de integração (secret ABACATO_TOKEN) que abre só o quadro do CRM e só cria card na coluna de entrada; qual quadro e qual coluna é decidido no Abacato, na criação do token. O Worker só libera CORS para as origens em ALLOWED_ORIGINS (worker/wrangler.toml); isso restringe o uso pelo navegador, mas não é autenticação. O Beyond-Lead não tem banco próprio: os dados ficam no Postgres do Abacato; o navegador guarda apenas os templates de WhatsApp e o mês selecionado no localStorage. As chaves (SERPER_API_KEY, GEMINI_API_KEY, ABACATO_TOKEN) são secrets do Worker, gravados com wrangler secret put; nunca vão para o navegador nem para o repositório. Não há GitHub Actions: o front é publicado pelo GitHub Pages direto da raiz da main (Deploy from branch, com .nojekyll) e a API é publicada da máquina com npm run api:publicar (wrangler, conta beyondbitsLisa da Cloudflare).",
       "diagramas": [
         {
           "titulo": "Arquitetura e fluxo de dados",
-          "mermaid": "flowchart LR\n  U[Usuário no navegador] --> FE[Front-end estático no GitHub Pages<br/>index.html + config.js + app.js + style.css]\n  FE -->|localStorage| LS[(Templates WhatsApp<br/>e mês selecionado)]\n  FE -->|POST /api/search| S[search.js]\n  FE -->|POST /api/process-lead| P[process-lead.js]\n  FE -->|GET /api/funil| T[funil.js]\n  FE -->|link wa.me| W[WhatsApp]\n  subgraph CF[Cloudflare Worker beyond-lead-api - CORS por ALLOWED_ORIGINS]\n    S\n    P\n    T\n  end\n  DEV[Máquina do dev<br/>npm run api:publicar] -->|wrangler deploy + secrets| CF\n  GIT[Push na main] -->|Pages: Deploy from branch| FE\n  S -->|Places API| SP[Serper.dev<br/>Google Maps]\n  P -->|HTML via HTMLRewriter| SITE[Site da empresa]\n  P -->|e-mail + resumo| G[Google Gemini<br/>gemini-1.5-flash]\n  P -->|POST /api/integracoes/cards<br/>conferir + criar| AB[Abacato<br/>abacato.beyond.dev.br]\n  T -->|GET /api/integracoes/quadro| AB\n  AB --> DB[(Postgres do Abacato<br/>quadro do CRM)]"
+          "mermaid": "flowchart LR\n  U[Usuário no navegador] --> FE[Front-end estático no GitHub Pages<br/>index.html + config.js + app.js + style.css]\n  FE -->|localStorage| LS[(Templates WhatsApp<br/>e mês selecionado)]\n  FE -->|POST /api/search| S[search.js]\n  FE -->|POST /api/process-lead| P[process-lead.js]\n  FE -->|GET /api/funil| T[funil.js]\n  FE -->|POST /api/lisa| L[lisa.js<br/>agente com ferramentas]\n  FE -->|link wa.me| W[WhatsApp]\n  subgraph CF[Cloudflare Worker beyond-lead-api - CORS por ALLOWED_ORIGINS]\n    S\n    P\n    T\n    L\n  end\n  DEV[Máquina do dev<br/>npm run api:publicar] -->|wrangler deploy + secrets| CF\n  GIT[Push na main] -->|Pages: Deploy from branch| FE\n  S -->|Places API| SP[Serper.dev<br/>Google Maps]\n  P -->|HTML via HTMLRewriter| SITE[Site da empresa]\n  P -->|e-mail + resumo| G[Google Gemini<br/>gemini-3.6-flash]\n  P -->|POST /api/integracoes/cards<br/>conferir + criar| AB[Abacato<br/>abacato.beyond.dev.br]\n  T -->|GET /api/integracoes/quadro| AB\n  AB --> DB[(Postgres do Abacato<br/>quadro do CRM)]\n  L -->|function calling| G\n  L -->|busca| SP\n  L -->|funil e CRM| AB"
         },
         {
           "titulo": "Fluxo da prospecção (um lead)",
@@ -164,9 +184,9 @@
         "url": "https://google.serper.dev/places"
       },
       {
-        "nome": "Google Gemini API (gemini-1.5-flash)",
-        "descricao": "Extrai e-mail comercial e resumo do negócio a partir do texto do site do lead. Usada por worker/src/process-lead.js. Chave no secret GEMINI_API_KEY.",
-        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+        "nome": "Google Gemini API (gemini-3.6-flash)",
+        "descricao": "Modelo da Lisa (conversa com function calling, em worker/src/lisa.js) e do enriquecimento de leads (e-mail e resumo a partir do site, em worker/src/process-lead.js). Chaves no secret GEMINI_API_KEY ou GEMINI_API_KEYS (várias, separadas por vírgula).",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent"
       },
       {
         "nome": "Abacato — quadro do CRM (API de integração)",

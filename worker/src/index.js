@@ -1,15 +1,19 @@
 // /worker/src/index.js
-// Back-end do Beyond-Lead no Cloudflare Workers: roteia /api/* e aplica CORS.
+// Back-end do Beyond-Lead no Cloudflare Workers: roteia /api/*, aplica CORS e exige a
+// chave de acesso da equipe (ver acesso.js).
 // As chaves (Serper, Gemini, Abacato) chegam em `env` como secrets do Worker.
 
 import { search } from './search.js';
 import { processLead } from './process-lead.js';
 import { funilStats } from './funil.js';
+import { lisa } from './lisa.js';
+import { conferirAcesso, CABECALHO_ACESSO } from './acesso.js';
 
 const ROUTES = {
   '/api/search': { method: 'POST', handler: search },
   '/api/process-lead': { method: 'POST', handler: processLead },
-  '/api/funil': { method: 'GET', handler: funilStats }
+  '/api/funil': { method: 'GET', handler: funilStats },
+  '/api/lisa': { method: 'POST', handler: lisa }
 };
 
 export default {
@@ -26,6 +30,12 @@ export default {
     }
     if (request.method !== route.method) {
       return json(405, { error: `Método não permitido. Use ${route.method}.` }, { ...cors, Allow: route.method });
+    }
+
+    // Antes de qualquer trabalho: sem a chave da equipe não se lê o funil nem se gasta cota.
+    const acesso = await conferirAcesso(request, env);
+    if (!acesso.ok) {
+      return json(acesso.status, { success: false, error: acesso.error, precisaAcesso: true }, cors);
     }
 
     const body = route.method === 'POST' ? await request.json().catch(() => ({})) : {};
@@ -48,7 +58,7 @@ function corsHeaders(request, env) {
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': `Content-Type, ${CABECALHO_ACESSO}`,
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin'
   };
