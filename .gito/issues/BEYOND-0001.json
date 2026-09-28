@@ -10,7 +10,7 @@
   "versaoAlvo": "0.1.0",
   "criadaEm": "2026-09-27T05:24:46.022Z",
   "criadaPor": "Brayan Rodrigues <brayan.rodrigues@delp.com.br>",
-  "atualizadaEm": "2026-09-28T21:31:16.103Z",
+  "atualizadaEm": "2026-09-28T22:47:53.833Z",
   "comentarios": [
     {
       "quando": "2026-09-28T21:24:35.751Z",
@@ -21,6 +21,11 @@
       "quando": "2026-09-28T21:31:16.103Z",
       "autor": "Brayan Rodrigues (via Claude)",
       "texto": "Correção na versão 0.1.1-issues_0.1.0.1 (branch Issues_0.1.0). Front: caminhos de style.css/app.js agora relativos e a pasta public/ publicada no Pages pelo workflow .github/workflows/pages.yml. API: search, process-lead e trello-stats migradas da Vercel para um Cloudflare Worker (worker/), com as chaves como secrets do Worker enviados pelo workflow .github/workflows/worker.yml e CORS restrito a ALLOWED_ORIGINS; endereço da API em public/config.js. Removidos vercel.json, api/chat.js e as cópias antigas do front na raiz. Testado localmente: CSS/JS carregando no subcaminho /Beyond-Lead/ e rotas do Worker com as APIs externas simuladas. Para conferir em produção: (1) Settings → Pages → Source: GitHub Actions; (2) cadastrar os secrets listados no README; (3) rodar o workflow Deploy Worker (API) e colocar a URL do Worker em public/config.js."
+    },
+    {
+      "quando": "2026-09-28T22:47:53.833Z",
+      "autor": "Brayan Rodrigues (via Claude)",
+      "texto": "Na versão 1.0.0 o deploy passou a não depender de GitHub Actions: o front fica na raiz da main e é publicado pelo GitHub Pages (Deploy from branch, com .nojekyll); a API foi publicada da máquina com wrangler em https://beyond-lead-api.beyondbitslisa.workers.dev. Conferido em produção: https://beyondbitsltda.github.io/Beyond-Lead/ abre com estilos e o /api/funil devolve os dados do quadro do CRM no Abacato. Pendente para a prospecção: gravar SERPER_API_KEY e GEMINI_API_KEY no Worker."
     }
   ],
   "evidencias": [],
