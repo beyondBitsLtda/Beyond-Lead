@@ -9,14 +9,27 @@
     "responsavel": "Brayan Rodrigues",
     "equipe": "Beyond Bits"
   },
-  "versao": "1.0.0-abacato-crm.1",
+  "versao": "1.0.0",
   "atualizadoEm": "2026-09-28",
   "compilacao": {
-    "numero": 4,
+    "numero": 5,
     "data": "2026-09-28",
     "artefato": ""
   },
   "historico": [
+    {
+      "versao": "1.0.0",
+      "data": "2026-09-28",
+      "branch": "main",
+      "tipo": "quebra",
+      "resumo": "Publicação do Beyond-Lead ligado ao quadro do CRM no Abacato, com deploy sem GitHub Actions.",
+      "itens": [
+        "Junta na main a branch abacato-crm (versão 1.0.0-abacato-crm.1).",
+        "Dashboard e prospecção passam a usar o quadro do CRM no Abacato; o Trello sai do Beyond-Lead.",
+        "Front publicado pelo GitHub Pages direto da raiz da main; API em https://beyond-lead-api.beyondbitslisa.workers.dev."
+      ],
+      "issues": []
+    },
     {
       "versao": "1.0.0-abacato-crm.1",
       "data": "2026-09-28",
