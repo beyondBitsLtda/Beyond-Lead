@@ -14,6 +14,9 @@ import { abacato, urlDoCard } from './abacato.js';
 import { scrapeSite } from './process-lead.js';
 
 const MAXIMO_DE_RODADAS = 6;
+// Idas ao Gemini somadas em todas as rodadas de um pedido. O Worker aceita 50 chamadas de rede
+// por pedido, e as ferramentas (Serper, Abacato, sites) precisam da sobra.
+const TENTATIVAS_DO_MODELO_POR_PEDIDO = 30;
 const MEMORIA = 16;
 const MAX_LEADS_EM_TELA = 40;
 
@@ -254,10 +257,13 @@ export async function lisa(body, env) {
     (naTela.length ? `\n\nLeads que já estão na tela da pessoa (use estes ids se ela se referir a eles):\n${JSON.stringify(naTela)}` : '');
 
   const usadas = [];
+  const orcamento = { restantes: TENTATIVAS_DO_MODELO_POR_PEDIDO };
+  let modelo = null;
   for (let rodada = 0; rodada < MAXIMO_DE_RODADAS; rodada++) {
     let resposta;
     try {
-      resposta = await conversar(env, { contents, sistema, ferramentas: FERRAMENTAS, maxTokens: 2048 });
+      resposta = await conversar(env, { contents, sistema, ferramentas: FERRAMENTAS, maxTokens: 2048, orcamento });
+      modelo = resposta.modelo;
     } catch (e) {
       return { status: 502, data: { error: e.message } };
     }
@@ -270,7 +276,8 @@ export async function lisa(body, env) {
           ok: true,
           texto: textoDe(resposta) || 'Não consegui formular uma resposta para isso.',
           propostas: sessao.propostas,
-          ferramentas: usadas
+          ferramentas: usadas,
+          modelo
         }
       };
     }
@@ -293,7 +300,8 @@ export async function lisa(body, env) {
       ok: true,
       texto: 'Dei voltas demais neste pedido sem chegar a uma resposta. Divida em passos menores.',
       propostas: sessao.propostas,
-      ferramentas: usadas
+      ferramentas: usadas,
+      modelo
     }
   };
 }

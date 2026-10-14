@@ -9,14 +9,30 @@
     "responsavel": "Brayan Rodrigues",
     "equipe": "Beyond Bits"
   },
-  "versao": "1.1.0",
-  "atualizadoEm": "2026-09-28",
+  "versao": "1.1.1-rodizio-gemini.1",
+  "atualizadoEm": "2026-10-14",
   "compilacao": {
-    "numero": 7,
-    "data": "2026-09-28",
+    "numero": 8,
+    "data": "2026-10-14",
     "artefato": ""
   },
   "historico": [
+    {
+      "versao": "1.1.1-rodizio-gemini.1",
+      "data": "2026-10-14",
+      "branch": "rodizio-gemini",
+      "tipo": "correcao",
+      "resumo": "A Lisa dizia \"a cota do modelo acabou\" quando o Gemini estava só sobrecarregado; agora ela cai para um modelo reserva e continua respondendo.",
+      "itens": [
+        "Causa medida em 14/10: gemini-3.6-flash e gemini-3.5-flash respondendo 503 (\"high demand\") em todas as chaves testadas, enquanto o gemini-3.5-flash-lite respondia em menos de 1 s. O código tratava 503 como cota, castigava a chave e, no fim, mostrava a mensagem errada.",
+        "Mesmo desenho da Lisa do beyond-assist: 429 castiga a chave só naquele modelo; 503/500/504 e tempo esgotado não castigam ninguém e, depois de 2, passam para o modelo reserva; 404 vai direto para o reserva.",
+        "Modelos reserva: gemini-3.5-flash-lite e gemini-3.5-flash (configurável em GEMINI_CHAT_RESERVAS). O modelo sobrecarregado fica marcado por 1 minuto, e as rodadas seguintes vão direto ao reserva.",
+        "Teto de tentativas: 8 por chamada e 30 por conversa da Lisa, para não passar do limite de 50 chamadas de rede por pedido do Worker gratuito.",
+        "As mensagens de erro passam a dizer a causa real (sobrecarga, cota ou modelo indisponível), e a resposta da Lisa informa qual modelo respondeu.",
+        "Vale também para o enriquecimento de leads (e-mail e resumo do site), que usa o mesmo cliente."
+      ],
+      "issues": []
+    },
     {
       "versao": "1.1.0",
       "data": "2026-09-28",
@@ -160,7 +176,7 @@
       "Cloudflare Workers (JavaScript ES Modules, fetch nativo, HTMLRewriter), sem dependências de npm em produção",
       "GitHub Pages (front-end estático, publicado da raiz da main)",
       "Wrangler 4 (devDependency) para publicar a API: npm run api:publicar",
-      "Google Gemini gemini-3.6-flash via API REST com function calling (Lisa) e JSON mode (enriquecimento)"
+      "Google Gemini gemini-3.6-flash (reservas gemini-3.5-flash-lite e gemini-3.5-flash) via API REST com function calling (Lisa) e JSON mode (enriquecimento)"
     ],
     "arquitetura": {
       "resumo": "Aplicação web de página única. O front-end estático (index.html, style.css, config.js e app.js, na raiz do repositório) é publicado no GitHub Pages e chama quatro endpoints de um Cloudflare Worker (worker/src/index.js), cujo endereço fica em config.js (apiBase: https://beyond-lead-api.beyondbitslisa.workers.dev): POST /api/search consulta a Serper Places (Google Maps) e devolve os negócios encontrados; o navegador aplica os filtros e envia cada lead, um por vez, para POST /api/process-lead, que pergunta ao Abacato se o lead já está no quadro do CRM, lê o site da empresa com o HTMLRewriter, pede ao Google Gemini (gemini-3.6-flash) o e-mail e o resumo e cria o card no Abacato; GET /api/funil lê o quadro do CRM inteiro no Abacato (colunas, cards, etiquetas e checklists), classifica as colunas por nome em etapas do funil, extrai valores em R$ e metas e devolve o JSON consolidado do dashboard; POST /api/lisa roda o laço de agente da Lisa (até 6 rodadas de ferramentas: buscar_empresas, propor_leads, ver_funil, procurar_no_crm, ler_site, propor_template) e devolve o texto e as propostas, que só viram card quando uma pessoa confirma na tela. Toda rota exige a chave de acesso da equipe no cabeçalho X-Beyond-Acesso (secret ACESSO_EQUIPE), conferida antes de qualquer trabalho. A conversa com o Abacato é pela API de integração dele (/api/integracoes/quadro e /api/integracoes/cards), com um token de integração (secret ABACATO_TOKEN) que abre só o quadro do CRM e só cria card na coluna de entrada; qual quadro e qual coluna é decidido no Abacato, na criação do token. O Worker só libera CORS para as origens em ALLOWED_ORIGINS (worker/wrangler.toml); isso restringe o uso pelo navegador, mas não é autenticação. O Beyond-Lead não tem banco próprio: os dados ficam no Postgres do Abacato; o navegador guarda apenas os templates de WhatsApp e o mês selecionado no localStorage. As chaves (SERPER_API_KEY, GEMINI_API_KEY, ABACATO_TOKEN) são secrets do Worker, gravados com wrangler secret put; nunca vão para o navegador nem para o repositório. Não há GitHub Actions: o front é publicado pelo GitHub Pages direto da raiz da main (Deploy from branch, com .nojekyll) e a API é publicada da máquina com npm run api:publicar (wrangler, conta beyondbitsLisa da Cloudflare).",
@@ -197,8 +213,8 @@
         "url": "https://google.serper.dev/places"
       },
       {
-        "nome": "Google Gemini API (gemini-3.6-flash)",
-        "descricao": "Modelo da Lisa (conversa com function calling, em worker/src/lisa.js) e do enriquecimento de leads (e-mail e resumo a partir do site, em worker/src/process-lead.js). Chaves no secret GEMINI_API_KEY ou GEMINI_API_KEYS (várias, separadas por vírgula).",
+        "nome": "Google Gemini API (gemini-3.6-flash, reservas 3.5-flash-lite e 3.5-flash)",
+        "descricao": "Modelo da Lisa (conversa com function calling, em worker/src/lisa.js) e do enriquecimento de leads (e-mail e resumo a partir do site, em worker/src/process-lead.js). Chaves no secret GEMINI_API_KEY ou GEMINI_API_KEYS (várias, separadas por vírgula). Rodízio: 429 castiga a chave naquele modelo; 503/500/504 passam para os modelos reserva (GEMINI_CHAT_RESERVAS, padrão gemini-3.5-flash-lite,gemini-3.5-flash). Teto de 8 tentativas por chamada e 30 por conversa da Lisa (limite de 50 chamadas de rede por pedido do Worker).",
         "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent"
       },
       {
