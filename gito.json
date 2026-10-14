@@ -9,14 +9,25 @@
     "responsavel": "Brayan Rodrigues",
     "equipe": "Beyond Bits"
   },
-  "versao": "1.1.1-rodizio-gemini.1",
+  "versao": "1.1.1",
   "atualizadoEm": "2026-10-14",
   "compilacao": {
-    "numero": 8,
+    "numero": 9,
     "data": "2026-10-14",
     "artefato": ""
   },
   "historico": [
+    {
+      "versao": "1.1.1",
+      "data": "2026-10-14",
+      "branch": "main",
+      "tipo": "correcao",
+      "resumo": "Publicação da correção do rodízio de modelos do Gemini (Lisa e enriquecimento).",
+      "itens": [
+        "Junta na main a branch rodizio-gemini (versão 1.1.1-rodizio-gemini.1)."
+      ],
+      "issues": []
+    },
     {
       "versao": "1.1.1-rodizio-gemini.1",
       "data": "2026-10-14",
