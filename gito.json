@@ -9,14 +9,76 @@
     "responsavel": "Brayan Rodrigues",
     "equipe": "Beyond Bits"
   },
-  "versao": "1.1.1",
-  "atualizadoEm": "2026-10-14",
+  "versao": "2.0.0",
+  "atualizadoEm": "2026-10-20",
   "compilacao": {
-    "numero": 9,
-    "data": "2026-10-14",
+    "numero": 13,
+    "data": "2026-10-20",
     "artefato": ""
   },
   "historico": [
+    {
+      "versao": "2.0.0",
+      "data": "2026-10-20",
+      "branch": "main",
+      "tipo": "quebra",
+      "resumo": "Publicação do visual novo e da Lisa mais rápida e fiel ao pedido.",
+      "itens": [
+        "Junta na main a branch lisa-pensamento (versões 1.1.2-lisa-pensamento.1, 1.2.0-lisa-pensamento.2 e 2.0.0-lisa-pensamento.3).",
+        "Visual novo: menu lateral, painel em blocos, gráficos redesenhados e tema claro/escuro.",
+        "Lisa: pensamento baixo no Gemini, prazo por pedido, leads mais próximos quando não acha tudo o que foi pedido e resposta de reserva quando o modelo falha (API publicada no Worker em 2026-10-20)."
+      ],
+      "issues": []
+    },
+    {
+      "versao": "2.0.0-lisa-pensamento.3",
+      "data": "2026-10-20",
+      "branch": "lisa-pensamento",
+      "tipo": "quebra",
+      "resumo": "Visual novo: menu lateral, painel em blocos no estilo dashboard, gráficos redesenhados e tema claro/escuro.",
+      "itens": [
+        "Layout refeito: moldura com menu lateral (Central, Abordagem HOJE, Faturamento, Metas, Templates, Lisa, Busca manual e Log) no lugar das abas no topo; cada item abre a aba e rola até o bloco.",
+        "Central em grade de blocos: card de destaque com faturamento do mês, total, ano, funil por etapa e três anéis (conversão, meta do mês e leads em andamento); Abordagem HOJE ao lado, em lista compacta com botões de Abacato e WhatsApp.",
+        "Gráficos novos em SVG próprio, sem biblioteca: faturamento por mês em área com pontos e pílulas de mês (clicar continua filtrando o mês), funil em anéis concêntricos, meta mensal em pontos sobre a linha dos 100%, meta da semana em anel raiado, movimentação semanal em barras e etiquetas em pontinhos.",
+        "Tema claro e escuro com botão no topo; sem escolha, segue o tema do sistema. A escolha fica salva no navegador.",
+        "Fonte Barlow no lugar de Space Grotesk e Inter; cores em variáveis CSS para os dois temas.",
+        "Responsivo: no celular o menu vira uma faixa rolável no topo e os blocos ficam em uma coluna.",
+        "Dados, rotas da API e comportamento continuam os mesmos; só a apresentação mudou."
+      ],
+      "issues": []
+    },
+    {
+      "versao": "1.2.0-lisa-pensamento.2",
+      "data": "2026-10-20",
+      "branch": "lisa-pensamento",
+      "tipo": "melhoria",
+      "resumo": "A Lisa sempre responde, mesmo com pedido longo, e é fiel ao que foi pedido: se não achar leads que atendam a tudo, diz o que faltou e propõe os mais próximos.",
+      "itens": [
+        "Pedido detalhado entra quase inteiro (até 12.000 caracteres na última mensagem). A Lisa separa os requisitos, busca com termo curto (segmento + cidade) e põe o resto nos filtros.",
+        "A busca agora pega sempre 20 empresas e devolve as que atendem a todos os filtros e, se não forem suficientes, as mais próximas com o que faltou em cada uma (\"sem telefone\", \"nota 4.6, abaixo de 4.7\").",
+        "Instruções novas: conferir requisito por requisito, dizer claramente o que não foi atendido, tentar variações do termo antes de desistir e nunca dizer que atendeu algo que não atendeu.",
+        "A última rodada (a 6ª, ou quando faltam menos de 25 s do prazo de 70 s) vai sem ferramentas: o modelo é obrigado a escrever a resposta.",
+        "Se o modelo falhar, travar ou responder vazio, o servidor responde sozinho: entrega os leads já achados, ordenados pelo que chegou mais perto do pedido, e explica o que faltou; se nada foi buscado, busca direto pelo texto do pedido e avisa que foi sem os filtros.",
+        "Qualquer erro inesperado também vira resposta explicando o que aconteceu, em vez de deixar a tela sem retorno."
+      ],
+      "issues": []
+    },
+    {
+      "versao": "1.1.2-lisa-pensamento.1",
+      "data": "2026-10-19",
+      "branch": "lisa-pensamento",
+      "tipo": "correcao",
+      "resumo": "A Lisa demorava muito na prospecção e às vezes não respondia nem achava leads; agora o modelo pensa menos, responde mais rápido e cada pedido tem prazo.",
+      "itens": [
+        "Causa: os modelos Gemini 3 \"pensam\" antes de responder, e o gemini-3.6-flash vem com pensamento médio por padrão. Esse pensamento é lento e sai do mesmo limite de tamanho da resposta (2048 tokens na Lisa, 300 no enriquecimento): ele gastava o limite inteiro e a resposta voltava vazia (\"a resposta não coube no limite de tamanho\").",
+        "A Lisa e o enriquecimento agora pedem pensamento baixo (Lisa: low; enriquecimento: minimal), configurável na variável GEMINI_THINKING do Worker. Se um modelo recusar o parâmetro, a chamada é repetida sem ele.",
+        "Limite de resposta da Lisa subiu de 2048 para 8192 tokens, e o do enriquecimento de 300 para 1024.",
+        "Cada pedido à Lisa tem prazo de 75 s. Se o modelo travar depois de ela já ter buscado e proposto leads, as propostas vão para a tela em vez de se perderem num erro.",
+        "Erro 400 (pedido inválido) não é mais repetido em todas as chaves: passa direto para o modelo reserva e mostra a mensagem real do Google.",
+        "Quando o modelo gasta o limite só pensando, a mensagem passa a dizer isso."
+      ],
+      "issues": []
+    },
     {
       "versao": "1.1.1",
       "data": "2026-10-14",
@@ -161,13 +223,14 @@
         "Criação automática do card na coluna de entrada do quadro do CRM no Abacato (a de alvos), com telefone formatado, link de WhatsApp, endereço, site, Google Maps, avaliação, categoria, resumo, termo de busca e data da prospecção.",
         "Log em tempo real, barra de progresso e resumo (criados, duplicados, falhas, tempo) de cada rodada de prospecção.",
         "Aba Central: dashboard lido em tempo real do quadro do CRM no Abacato, classificando as colunas em etapas do funil (Alvos, Abordagem, Diagnóstico, Proposta, Fechado, Perdido, Follow-up, Tickets).",
-        "KPIs: leads no funil, em abordagem, fechados, taxa de conversão e faturamento do mês e do ano.",
+        "Card de destaque: faturamento do mês, total e do ano, leads no funil por etapa, taxa de conversão, % da meta do mês e % do funil já em andamento.",
         "Faturamento por mês: soma os valores em R$ escritos nos cards fechados (nome, descrição e checklists), agrupando pela etiqueta \"MÊS DE X\", pelo nome do card ou pela data de criação do card.",
         "Metas: meta da semana (progresso do checklist do card \"Metas da Semana\") e meta mensal (geral ou por mês) lidas da coluna de metas do quadro do CRM.",
-        "Gráficos de funil, faturamento dos últimos 6 meses, distribuição por etiqueta e movimentação das últimas 8 semanas.",
+        "Gráficos de funil (anéis por etapa), faturamento por mês (área, últimos 6 meses ou todos), % da meta mensal por mês, meta da semana, distribuição por etiqueta e movimentação das últimas 8 semanas.",
         "Lista \"Abordagem HOJE\" com botão de WhatsApp (link wa.me) e templates de mensagem com a variável {{nome_empresa}}, salvos no navegador.",
         "Lisa, assistente de IA na aba Prospecção: busca empresas, consulta funil e CRM, lê sites, sugere abordagens e propõe leads e templates; a criação dos cards é sempre confirmada por uma pessoa.",
-        "Chave de acesso da equipe exigida pela API (dashboard, prospecção e Lisa)."
+        "Chave de acesso da equipe exigida pela API (dashboard, prospecção e Lisa).",
+        "Visual em blocos com menu lateral e tema claro/escuro (segue o sistema até a pessoa escolher)."
       ],
       "naoInclui": [
         "Não tem login individual: o acesso é por uma chave única da equipe (não identifica quem fez o quê).",
@@ -182,12 +245,12 @@
       ]
     },
     "stack": [
-      "HTML5, CSS3 e JavaScript puro (sem framework) no front-end; gráficos desenhados com HTML/CSS, sem biblioteca de gráficos",
-      "Google Fonts: Space Grotesk e Inter",
+      "HTML5, CSS3 e JavaScript puro (sem framework) no front-end; gráficos desenhados em SVG pelo próprio app.js, sem biblioteca de gráficos; tema claro/escuro por variáveis CSS",
+      "Google Fonts: Barlow",
       "Cloudflare Workers (JavaScript ES Modules, fetch nativo, HTMLRewriter), sem dependências de npm em produção",
       "GitHub Pages (front-end estático, publicado da raiz da main)",
       "Wrangler 4 (devDependency) para publicar a API: npm run api:publicar",
-      "Google Gemini gemini-3.6-flash (reservas gemini-3.5-flash-lite e gemini-3.5-flash) via API REST com function calling (Lisa) e JSON mode (enriquecimento)"
+      "Google Gemini gemini-3.6-flash (reservas gemini-3.5-flash-lite e gemini-3.5-flash) via API REST com function calling (Lisa) e JSON mode (enriquecimento); pensamento em nível baixo (GEMINI_THINKING)"
     ],
     "arquitetura": {
       "resumo": "Aplicação web de página única. O front-end estático (index.html, style.css, config.js e app.js, na raiz do repositório) é publicado no GitHub Pages e chama quatro endpoints de um Cloudflare Worker (worker/src/index.js), cujo endereço fica em config.js (apiBase: https://beyond-lead-api.beyondbitslisa.workers.dev): POST /api/search consulta a Serper Places (Google Maps) e devolve os negócios encontrados; o navegador aplica os filtros e envia cada lead, um por vez, para POST /api/process-lead, que pergunta ao Abacato se o lead já está no quadro do CRM, lê o site da empresa com o HTMLRewriter, pede ao Google Gemini (gemini-3.6-flash) o e-mail e o resumo e cria o card no Abacato; GET /api/funil lê o quadro do CRM inteiro no Abacato (colunas, cards, etiquetas e checklists), classifica as colunas por nome em etapas do funil, extrai valores em R$ e metas e devolve o JSON consolidado do dashboard; POST /api/lisa roda o laço de agente da Lisa (até 6 rodadas de ferramentas: buscar_empresas, propor_leads, ver_funil, procurar_no_crm, ler_site, propor_template) e devolve o texto e as propostas, que só viram card quando uma pessoa confirma na tela. Toda rota exige a chave de acesso da equipe no cabeçalho X-Beyond-Acesso (secret ACESSO_EQUIPE), conferida antes de qualquer trabalho. A conversa com o Abacato é pela API de integração dele (/api/integracoes/quadro e /api/integracoes/cards), com um token de integração (secret ABACATO_TOKEN) que abre só o quadro do CRM e só cria card na coluna de entrada; qual quadro e qual coluna é decidido no Abacato, na criação do token. O Worker só libera CORS para as origens em ALLOWED_ORIGINS (worker/wrangler.toml); isso restringe o uso pelo navegador, mas não é autenticação. O Beyond-Lead não tem banco próprio: os dados ficam no Postgres do Abacato; o navegador guarda apenas os templates de WhatsApp e o mês selecionado no localStorage. As chaves (SERPER_API_KEY, GEMINI_API_KEY, ABACATO_TOKEN) são secrets do Worker, gravados com wrangler secret put; nunca vão para o navegador nem para o repositório. Não há GitHub Actions: o front é publicado pelo GitHub Pages direto da raiz da main (Deploy from branch, com .nojekyll) e a API é publicada da máquina com npm run api:publicar (wrangler, conta beyondbitsLisa da Cloudflare).",
@@ -225,7 +288,7 @@
       },
       {
         "nome": "Google Gemini API (gemini-3.6-flash, reservas 3.5-flash-lite e 3.5-flash)",
-        "descricao": "Modelo da Lisa (conversa com function calling, em worker/src/lisa.js) e do enriquecimento de leads (e-mail e resumo a partir do site, em worker/src/process-lead.js). Chaves no secret GEMINI_API_KEY ou GEMINI_API_KEYS (várias, separadas por vírgula). Rodízio: 429 castiga a chave naquele modelo; 503/500/504 passam para os modelos reserva (GEMINI_CHAT_RESERVAS, padrão gemini-3.5-flash-lite,gemini-3.5-flash). Teto de 8 tentativas por chamada e 30 por conversa da Lisa (limite de 50 chamadas de rede por pedido do Worker).",
+        "descricao": "Modelo da Lisa (conversa com function calling, em worker/src/lisa.js) e do enriquecimento de leads (e-mail e resumo a partir do site, em worker/src/process-lead.js). Chaves no secret GEMINI_API_KEY ou GEMINI_API_KEYS (várias, separadas por vírgula). Rodízio: 429 castiga a chave naquele modelo; 503/500/504 passam para os modelos reserva (GEMINI_CHAT_RESERVAS, padrão gemini-3.5-flash-lite,gemini-3.5-flash). Teto de 8 tentativas por chamada e 30 por conversa da Lisa (limite de 50 chamadas de rede por pedido do Worker). Pensamento em nível baixo (GEMINI_THINKING, padrão low; minimal no enriquecimento), porque no Gemini 3 o pensamento sai do limite de resposta. Cada pedido à Lisa tem prazo de 70 s; a última rodada vai sem ferramentas e, se o modelo falhar, o servidor responde com os leads já achados ou com uma busca direta pelo texto do pedido.",
         "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent"
       },
       {
