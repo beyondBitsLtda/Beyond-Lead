@@ -82,7 +82,18 @@ em R$ dos cards fechados e agrupa por mês pela etiqueta "MÊS DE X". Como o Aba
 ## A Lisa na prospecção
 
 Chat no topo da aba Prospecção (`POST /api/lisa`), com o modelo `gemini-3.6-flash` (o mesmo da
-Lisa do Abacato; troque com a variável `GEMINI_CHAT_MODEL`). Ferramentas:
+Lisa do Abacato; troque com a variável `GEMINI_CHAT_MODEL`). O modelo pensa em nível baixo
+(`GEMINI_THINKING`, padrão `low`; `off` não manda o parâmetro): no nível padrão do Gemini 3 o
+pensamento era lento e gastava o limite de resposta.
+
+**Ela sempre responde e é fiel ao pedido.** Pedido longo e detalhado é normal: ela separa os
+requisitos (segmento, cidade, quantidade, nota, telefone, site), busca com termo curto e põe o
+resto nos filtros. A busca devolve os leads que atendem a tudo e, se faltarem, os mais próximos
+com o que faltou em cada um; a Lisa diz o que não conseguiu atender e propõe os mais próximos.
+Cada pedido tem prazo de 70 s e no máximo 6 rodadas; a última é sem ferramentas, só a resposta.
+Se o modelo falhar mesmo assim, o servidor responde sozinho: entrega o que já foi achado
+(ordenado pelo que chegou mais perto) ou, se nada foi buscado, busca direto pelo texto do pedido
+e avisa que foi sem os filtros. Ferramentas:
 
 | ferramenta | o que faz |
 |---|---|

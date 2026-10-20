@@ -198,7 +198,8 @@ async function extractEmailAndSummary(text, url, env) {
   try {
     const resposta = await conversar(env, {
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      maxTokens: 300, temperatura: 0.2, json: true
+      // Extração simples: pensamento mínimo, senão ele come os tokens e o JSON volta vazio.
+      maxTokens: 1024, temperatura: 0.2, json: true, pensamento: 'minimal'
     });
     const cleaned = textoDe(resposta).replace(/^```json\s*/i, '').replace(/```$/g, '').trim();
     return JSON.parse(cleaned);

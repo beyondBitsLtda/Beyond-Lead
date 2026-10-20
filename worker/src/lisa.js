@@ -17,13 +17,33 @@ const MAXIMO_DE_RODADAS = 6;
 // Idas ao Gemini somadas em todas as rodadas de um pedido. O Worker aceita 50 chamadas de rede
 // por pedido, e as ferramentas (Serper, Abacato, sites) precisam da sobra.
 const TENTATIVAS_DO_MODELO_POR_PEDIDO = 30;
+// Tempo máximo de um pedido. Sem teto, um modelo pendurado em várias rodadas deixava a tela em
+// "Pensando…" por minutos; passado o prazo, a Lisa devolve o que já tiver (leads propostos).
+const PRAZO_DO_PEDIDO_MS = 70000;
+// Com menos que isto de prazo, a rodada seguinte é a última: sem ferramentas, só a resposta.
+const FOLGA_PARA_RESPONDER_MS = 25000;
+// Limite de saída de cada rodada. Nos modelos Gemini 3 o pensamento sai deste mesmo limite.
+const TOKENS_DE_RESPOSTA = 8192;
 const MEMORIA = 16;
+// Pedido detalhado não é problema: a última mensagem da pessoa entra quase inteira; as antigas,
+// cortadas.
+const TAMANHO_DA_PERGUNTA = 12000;
+const TAMANHO_DO_HISTORICO = 4000;
 const MAX_LEADS_EM_TELA = 40;
 
 const INSTRUCOES = `Você é a Lisa, a assistente da Beyond Bits, aqui na área de prospecção do Beyond-Lead.
 A Beyond Bits faz sites e sistemas sob medida. Você ajuda a equipe comercial a achar empresas, escolher quem abordar e escrever a abordagem.
 
 Você fala português do Brasil, com frases curtas e diretas. Nada de "claro!", "com certeza!" nem emoji. Um pouco de ironia seca é bem-vinda; enrolação, não.
+
+SEJA FIEL AO PEDIDO
+- Antes de buscar, separe os requisitos do pedido: segmento, cidade/região, quantidade, nota mínima, se precisa de telefone, se precisa ter (ou NÃO ter) site, e qualquer outra condição.
+- Pedidos longos e detalhados são normais. Não reclame do tamanho: extraia os requisitos e trabalhe.
+- O termo de buscar_empresas é CURTO, como se digita no Google Maps: segmento + cidade ("pet shops em Joinville"). Os outros requisitos vão nos parâmetros (nota_minima, exige_telefone, exige_site, sem_site, limite), nunca no termo.
+- Se a busca não trouxer o suficiente, tente de novo uma ou duas vezes com variações: sinônimo do segmento, bairro ou cidade vizinha.
+- Requisito que nenhuma ferramenta confere (ex.: "que atenda convênio") você não garante: diga que não dá para confirmar só pela busca.
+- Ao terminar, confira requisito por requisito. Se algum não foi atendido, diga claramente qual e por quê, e proponha os leads mais próximos do pedido original (a busca devolve em "mais_proximos" o que faltou em cada um). Nunca diga que atendeu algo que não atendeu, e nunca termine sem resposta.
+- A busca traz no máximo 20 empresas por termo. Se pedirem mais, faça mais de uma busca ou explique o limite.
 
 COMO VOCÊ TRABALHA
 - Use as ferramentas em vez de adivinhar. Empresa, telefone, site e nota só existem se vieram de buscar_empresas. Nunca invente dados.
@@ -44,12 +64,12 @@ O QUE VOCÊ NÃO FAZ
 const FERRAMENTAS = [
   {
     name: 'buscar_empresas',
-    description: 'Busca empresas no Google Maps (Serper). Devolve uma lista resumida com id, nome, categoria, nota, se tem telefone e site.',
+    description: 'Busca empresas no Google Maps (Serper). Devolve em "leads" as que atendem a todos os filtros e, se não forem suficientes, em "mais_proximos" as que chegaram perto, com o que faltou em cada uma.',
     parameters: {
       type: 'object',
       properties: {
-        termo: { type: 'string', description: 'O que buscar e onde. Ex.: "clínicas odontológicas em Curitiba".' },
-        limite: { type: 'integer', description: 'Quantos resultados buscar, de 1 a 20. Padrão 10.' },
+        termo: { type: 'string', description: 'Curto: segmento + cidade, como no Google Maps. Ex.: "clínicas odontológicas em Curitiba". Filtros NÃO vão aqui.' },
+        limite: { type: 'integer', description: 'Quantos leads a pessoa quer, de 1 a 20. Padrão 10.' },
         nota_minima: { type: 'number', description: 'Descarta empresas com nota abaixo disto (0 a 5).' },
         exige_telefone: { type: 'boolean', description: 'Só empresas com telefone.' },
         exige_site: { type: 'boolean', description: 'Só empresas com site.' },
@@ -127,6 +147,27 @@ function resumoDoLead(id, item) {
 
 const idDoLead = (item, i) => item?.place?.placeId || `lead-${i}`;
 
+/** O que falta num lead para atender aos filtros da busca (vazio = atende a tudo). */
+function faltasDo(item, filtros) {
+  const p = item.place || {};
+  const faltou = [];
+  if (filtros.exige_telefone && !p.telefone) faltou.push('sem telefone');
+  if (filtros.exige_site && !p.site) faltou.push('sem site');
+  if (filtros.sem_site && p.site) faltou.push('já tem site');
+  if (filtros.nota_minima > 0 && (!p.rating || p.rating < filtros.nota_minima)) {
+    faltou.push(p.rating ? `nota ${p.rating}, abaixo de ${filtros.nota_minima}` : 'sem nota');
+  }
+  return faltou;
+}
+
+/** Um termo de busca tirado do próprio pedido, para quando o modelo não respondeu. */
+function termoDoPedido(texto) {
+  // Corta na primeira frase; o ponto de "nota 4.7" não é fim de frase.
+  const linha = String(texto || '').split(/[\n!?]|\.(?=\s|$)/).map((t) => t.trim()).find((t) => t.length >= 3) || '';
+  const curto = linha.replace(/\s+/g, ' ').slice(0, 100);
+  return curto.length < linha.length ? curto.replace(/\s+\S*$/, '') : curto;
+}
+
 /** Uma conversa: o estado vive só durante o pedido. O que a tela precisa lembrar volta
  *  para ela em `propostas` e ela devolve em `contexto.leadsEmTela` no próximo pedido. */
 function criarSessao(contexto) {
@@ -135,33 +176,46 @@ function criarSessao(contexto) {
   emTela.forEach((item, i) => {
     if (item?.place?.nome) leads.set(idDoLead(item, `tela-${i}`), item);
   });
-  return { leads, propostas: { leads: [], template: null, observacao: null } };
+  // buscas: termos já buscados; faltas: id → o que faltou (só para leads que vieram de busca).
+  return { leads, buscas: [], faltas: new Map(), propostas: { leads: [], template: null, observacao: null } };
 }
 
 async function executar(nome, args, sessao, env) {
   try {
     switch (nome) {
       case 'buscar_empresas': {
-        const { status, data } = await search({ query: args.termo, limit: args.limite || 10 }, env);
+        const termo = String(args.termo || '').trim();
+        const quer = Math.min(Math.max(parseInt(args.limite, 10) || 10, 1), 20);
+        // Busca sempre o máximo: os filtros cortam depois, e quem não passa serve de "mais próximo".
+        const { status, data } = await search({ query: termo, limit: 20 }, env);
         if (status !== 200) return { erro: data.error || 'a busca falhou' };
-        let itens = data.results || [];
-        const total = itens.length;
-        itens = itens.filter((it) => {
-          const p = it.place || {};
-          if (args.exige_telefone && !p.telefone) return false;
-          if (args.exige_site && !p.site) return false;
-          if (args.sem_site && p.site) return false;
-          if (args.nota_minima > 0 && (!p.rating || p.rating < args.nota_minima)) return false;
-          return true;
-        });
-        const base = sessao.leads.size;
-        const resumo = itens.map((it, i) => {
-          const id = idDoLead(it, base + i);
-          it.termo = args.termo; // vai para o card como "Termo de busca"
+        const itens = data.results || [];
+        sessao.buscas.push(termo);
+        const atendem = [];
+        const quase = [];
+        itens.forEach((it, i) => {
+          const id = idDoLead(it, `${sessao.buscas.length}-${i}`);
+          const faltou = faltasDo(it, args);
+          it.termo = termo; // vai para o card como "Termo de busca"
           sessao.leads.set(id, it);
-          return resumoDoLead(id, it);
+          sessao.faltas.set(id, faltou);
+          if (faltou.length) quase.push({ ...resumoDoLead(id, it), faltou });
+          else atendem.push(resumoDoLead(id, it));
         });
-        return { encontrados: total, depois_dos_filtros: resumo.length, leads: resumo };
+        quase.sort((x, y) => x.faltou.length - y.faltou.length || (y.nota || 0) - (x.nota || 0));
+        const leads = atendem.slice(0, quer);
+        return {
+          pedidos: quer,
+          encontrados: itens.length,
+          atendem_a_todos_os_filtros: atendem.length,
+          leads,
+          ...(leads.length < quer && quase.length
+            ? { mais_proximos: quase.slice(0, quer - leads.length) }
+            : {}),
+          ...(itens.length ? {} : {
+            dica: 'Nenhum resultado. Tente um termo mais curto e comum (segmento + cidade), um sinônimo ou uma cidade vizinha.'
+          })
+        };
       }
 
       case 'propor_leads': {
@@ -234,74 +288,131 @@ async function executar(nome, args, sessao, env) {
 }
 
 /**
+ * A resposta quando o modelo não chegou ao fim (falhou, estourou o prazo ou deu voltas demais).
+ * Nunca volta de mãos vazias: entrega o que as ferramentas já acharam e, se nada foi buscado,
+ * busca direto pelo texto do pedido. Sempre diz o que não conseguiu.
+ */
+async function respostaDeReserva(sessao, env, pedido, motivo) {
+  const propostas = sessao.propostas;
+  const porque = motivo ? ` (${motivo})` : '';
+  if (propostas.leads.length || propostas.template) {
+    return `Deixei as propostas na tela, mas não consegui terminar a resposta${porque}. Confira se elas batem com o pedido antes de criar.`;
+  }
+
+  let buscouPeloTexto = null;
+  if (!sessao.buscas.length) {
+    const termo = termoDoPedido(pedido);
+    if (termo.length >= 3) {
+      buscouPeloTexto = termo;
+      const busca = await executar('buscar_empresas', { termo, limite: 20 }, sessao, env);
+      if (busca.erro) {
+        return `Não consegui atender ao pedido${porque}, e a busca de empresas também falhou (${busca.erro}). Tente de novo em instantes.`;
+      }
+    }
+  }
+
+  const candidatos = [...sessao.leads.entries()]
+    .filter(([id]) => sessao.faltas.has(id))
+    .sort(([a, x], [b, y]) => sessao.faltas.get(a).length - sessao.faltas.get(b).length
+      || (y.place?.rating || 0) - (x.place?.rating || 0))
+    .slice(0, 10);
+  if (!candidatos.length) {
+    const onde = sessao.buscas.length ? ` buscando por "${sessao.buscas.join('", "')}"` : '';
+    return `Não consegui atender ao pedido${porque} e não achei nenhuma empresa${onde}. Tente de novo com segmento e cidade, por exemplo "pet shops em Joinville".`;
+  }
+
+  propostas.leads = candidatos.map(([, it]) => it);
+  const incompletos = candidatos.filter(([id]) => sessao.faltas.get(id).length);
+  const faltas = [...new Set(incompletos.flatMap(([id]) => sessao.faltas.get(id)))].slice(0, 3).join('; ');
+  propostas.observacao = incompletos.length
+    ? `Mais próximos do pedido. ${incompletos.length} de ${candidatos.length} não atendem a todos os filtros (${faltas}).`
+    : 'Resultado da busca, sem a conferência final da Lisa.';
+
+  if (buscouPeloTexto) {
+    return `Não consegui analisar o pedido${porque}. Busquei direto por "${buscouPeloTexto}", sem os filtros, e deixei ${candidatos.length} lead(s) na tela. Confira se batem com o que você pediu antes de criar.`;
+  }
+  return incompletos.length
+    ? `Não consegui atender ao pedido por completo${porque}. Deixei na tela os ${candidatos.length} leads mais próximos do que você pediu; ${incompletos.length} deles não atendem a todos os requisitos (${faltas}).`
+    : `Não consegui terminar a resposta${porque}, mas deixei na tela ${candidatos.length} lead(s) da busca. Confira se batem com o pedido antes de criar.`;
+}
+
+/**
  * POST /api/lisa
  * body: { mensagens: [{ quem: "pessoa"|"lisa", texto }], contexto?: { leadsEmTela: [...] } }
+ * Sempre responde: se o modelo não chegar ao fim, entra a respostaDeReserva.
  */
 export async function lisa(body, env) {
   if (!temModelo(env)) {
     return { status: 503, data: { error: 'A Lisa não está ligada: falta a chave do Gemini no Worker.' } };
   }
 
-  const mensagens = Array.isArray(body?.mensagens) ? body.mensagens.slice(-MEMORIA) : [];
-  const contents = mensagens
-    .filter((m) => m && typeof m.texto === 'string' && m.texto.trim())
-    .map((m) => ({ role: m.quem === 'lisa' ? 'model' : 'user', parts: [{ text: m.texto.slice(0, 4000) }] }));
+  const mensagens = (Array.isArray(body?.mensagens) ? body.mensagens.slice(-MEMORIA) : [])
+    .filter((m) => m && typeof m.texto === 'string' && m.texto.trim());
+  const contents = mensagens.map((m, i) => ({
+    role: m.quem === 'lisa' ? 'model' : 'user',
+    parts: [{ text: m.texto.slice(0, i === mensagens.length - 1 ? TAMANHO_DA_PERGUNTA : TAMANHO_DO_HISTORICO) }]
+  }));
   if (!contents.length || contents[contents.length - 1].role !== 'user') {
     return { status: 400, data: { error: 'Não veio pergunta nenhuma.' } };
   }
+  const pedido = mensagens[mensagens.length - 1].texto;
 
   const sessao = criarSessao(body.contexto);
-  const hoje = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
-  const naTela = [...sessao.leads.entries()].map(([id, it]) => resumoDoLead(id, it));
-  const sistema = `${INSTRUCOES}\n\nHoje é ${hoje}.` +
-    (naTela.length ? `\n\nLeads que já estão na tela da pessoa (use estes ids se ela se referir a eles):\n${JSON.stringify(naTela)}` : '');
-
   const usadas = [];
-  const orcamento = { restantes: TENTATIVAS_DO_MODELO_POR_PEDIDO };
   let modelo = null;
-  for (let rodada = 0; rodada < MAXIMO_DE_RODADAS; rodada++) {
-    let resposta;
-    try {
-      resposta = await conversar(env, { contents, sistema, ferramentas: FERRAMENTAS, maxTokens: 2048, orcamento });
-      modelo = resposta.modelo;
-    } catch (e) {
-      return { status: 502, data: { error: e.message } };
-    }
-
-    const chamadas = chamadasDe(resposta);
-    if (!chamadas.length) {
-      return {
-        status: 200,
-        data: {
-          ok: true,
-          texto: textoDe(resposta) || 'Não consegui formular uma resposta para isso.',
-          propostas: sessao.propostas,
-          ferramentas: usadas,
-          modelo
-        }
-      };
-    }
-
-    // A resposta com as chamadas volta ao histórico ANTES dos resultados; sem ela, a rodada
-    // seguinte recebe resultados de funções que, para o modelo, ninguém pediu.
-    contents.push({ role: 'model', parts: resposta.parts });
-    const resultados = [];
-    for (const chamada of chamadas) {
-      usadas.push(chamada.nome);
-      const resultado = await executar(chamada.nome, chamada.args, sessao, env);
-      resultados.push({ functionResponse: { name: chamada.nome, response: resultado } });
-    }
-    contents.push({ role: 'user', parts: resultados });
-  }
-
-  return {
+  const responder = (texto) => ({
     status: 200,
-    data: {
-      ok: true,
-      texto: 'Dei voltas demais neste pedido sem chegar a uma resposta. Divida em passos menores.',
-      propostas: sessao.propostas,
-      ferramentas: usadas,
-      modelo
+    data: { ok: true, texto, propostas: sessao.propostas, ferramentas: usadas, modelo }
+  });
+
+  try {
+    const hoje = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+    const naTela = [...sessao.leads.entries()].map(([id, it]) => resumoDoLead(id, it));
+    const sistema = `${INSTRUCOES}\n\nHoje é ${hoje}.` +
+      (naTela.length ? `\n\nLeads que já estão na tela da pessoa (use estes ids se ela se referir a eles):\n${JSON.stringify(naTela)}` : '');
+
+    const orcamento = { restantes: TENTATIVAS_DO_MODELO_POR_PEDIDO, prazo: Date.now() + PRAZO_DO_PEDIDO_MS };
+    for (let rodada = 0; rodada < MAXIMO_DE_RODADAS; rodada++) {
+      // Última rodada (pelo número ou pelo relógio): ferramentas desligadas, o modelo só responde.
+      const ultima = rodada === MAXIMO_DE_RODADAS - 1
+        || (rodada > 0 && orcamento.prazo - Date.now() < FOLGA_PARA_RESPONDER_MS);
+      let resposta;
+      try {
+        resposta = await conversar(env, {
+          contents, sistema, ferramentas: FERRAMENTAS, semFerramentas: ultima,
+          maxTokens: TOKENS_DE_RESPOSTA, orcamento
+        });
+        modelo = resposta.modelo;
+      } catch (e) {
+        return responder(await respostaDeReserva(sessao, env, pedido, e.message));
+      }
+
+      const chamadas = ultima ? [] : chamadasDe(resposta);
+      if (!chamadas.length) {
+        const texto = textoDe(resposta);
+        if (texto) return responder(texto);
+        return responder(await respostaDeReserva(sessao, env, pedido, 'o modelo não escreveu a resposta'));
+      }
+
+      // A resposta com as chamadas volta ao histórico ANTES dos resultados; sem ela, a rodada
+      // seguinte recebe resultados de funções que, para o modelo, ninguém pediu.
+      contents.push({ role: 'model', parts: resposta.parts });
+      const resultados = [];
+      for (const chamada of chamadas) {
+        usadas.push(chamada.nome);
+        const resultado = await executar(chamada.nome, chamada.args, sessao, env);
+        resultados.push({ functionResponse: { name: chamada.nome, response: resultado } });
+      }
+      contents.push({ role: 'user', parts: resultados });
     }
-  };
+    return responder(await respostaDeReserva(sessao, env, pedido, 'dei voltas demais neste pedido'));
+  } catch (e) {
+    // Rede de segurança: qualquer falha inesperada ainda vira resposta com o que já foi achado.
+    console.error('[lisa] erro:', e.message);
+    try {
+      return responder(await respostaDeReserva(sessao, env, pedido, 'tive um erro interno'));
+    } catch {
+      return responder('Tive um erro interno e não consegui atender a este pedido. Tente de novo em instantes.');
+    }
+  }
 }
