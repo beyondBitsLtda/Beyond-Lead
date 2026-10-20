@@ -1,312 +1,384 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-BR" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" href="data:," />
-    <title>Prospect Leads — Central de Operação</title>
+    <title>Beyond Lead — Central de Operação</title>
+    <script>
+      // Tema antes da primeira pintura: o escolhido na tela ou, sem escolha, o do sistema.
+      (function () {
+        var t = null;
+        try { t = localStorage.getItem('beyond_lead_tema_v1'); } catch (e) {}
+        if (t !== 'light' && t !== 'dark') {
+          t = window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        }
+        document.documentElement.setAttribute('data-theme', t);
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="style.css" />
   </head>
-  <body>
-    <div class="bg-glow"></div>
+  <body data-aba="dashboard">
+    <div class="bg-glow" aria-hidden="true"></div>
 
-    <main class="shell">
-      <header class="topbar">
+    <div class="app">
+      <!-- ============================================================ -->
+      <!-- MENU LATERAL                                                 -->
+      <!-- ============================================================ -->
+      <aside class="sidebar">
         <div class="brand">
-          <span class="brand-mark">◆</span>
-          <span class="brand-name">PROSPECT<span>LEADS</span></span>
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32"><path d="M16 2 28 9v14l-12 7L4 23V9z" /><path d="M11 12.5h6a3 3 0 0 1 0 6h-6zm0 6h7a3 3 0 0 1 0 6h-7z" class="brand-b" /></svg>
+          </span>
+          <span class="brand-name">Beyond <strong>Lead</strong></span>
         </div>
-        <nav class="tabs">
-          <button class="tab-btn active" data-tab="dashboard">Central</button>
-          <button class="tab-btn" data-tab="prospect">Prospecção</button>
+
+        <nav class="side-nav" aria-label="Seções">
+          <button class="nav-item active" data-tab="dashboard">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></svg>
+            <span>Central</span>
+          </button>
+          <button class="nav-item" data-tab="dashboard" data-alvo="sec-hoje">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c1 3 5 5 5 10a5 5 0 0 1-10 0c0-2 1-3.5 2-4.5 0 2 1 3 2 3 0-3-1-5 1-8.5z" /></svg>
+            <span>Abordagem HOJE</span>
+          </button>
+          <button class="nav-item" data-tab="dashboard" data-alvo="sec-faturamento">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l5-5 4 4 8-9M15 7h5v5" /></svg>
+            <span>Faturamento</span>
+          </button>
+          <button class="nav-item" data-tab="dashboard" data-alvo="sec-metas">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1" /></svg>
+            <span>Metas</span>
+          </button>
+          <button class="nav-item" data-tab="dashboard" data-alvo="sec-templates">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H8l-4 4z" /><path d="M8 9h8M8 12h5" /></svg>
+            <span>Templates</span>
+          </button>
+
+          <span class="nav-sep" aria-hidden="true"></span>
+
+          <button class="nav-item" data-tab="prospect">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7z" /></svg>
+            <span>Lisa</span>
+          </button>
+          <button class="nav-item" data-tab="prospect" data-alvo="sec-busca">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-4-4" /></svg>
+            <span>Busca manual</span>
+          </button>
+          <button class="nav-item" data-tab="prospect" data-alvo="sec-log">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM9 9h6M9 13h6M9 17h3" /></svg>
+            <span>Log</span>
+          </button>
         </nav>
-      </header>
+
+        <div class="side-foot">
+          <span>Beyond Bits</span>
+        </div>
+      </aside>
 
       <!-- ============================================================ -->
-      <!-- ABA: CENTRAL DE OPERAÇÃO                                     -->
+      <!-- CONTEÚDO                                                     -->
       <!-- ============================================================ -->
-      <section class="tab-content active" id="tab-dashboard">
-        <div class="dash-header">
+      <main class="main">
+        <header class="topbar">
           <div>
-            <h1 class="dash-title">Central de Operação</h1>
-            <p class="dash-sub" id="last-update">Sincronizando com o Abacato…</p>
+            <h1 class="page-title" id="page-title">Central de Operação</h1>
+            <p class="page-sub" id="last-update">Sincronizando com o Abacato…</p>
           </div>
-          <div class="dash-controls">
-            <div class="month-picker">
+          <div class="top-controls">
+            <div class="month-picker only-dashboard">
               <label for="month-select">Mês</label>
               <select id="month-select"></select>
             </div>
-            <button class="btn-ghost" id="refresh-btn">↻ Atualizar</button>
-          </div>
-        </div>
-
-        <!-- KPIs -->
-        <div class="grid-kpi">
-          <div class="kpi">
-            <span class="kpi-label">No funil</span>
-            <span class="kpi-value" id="kpi-funil">—</span>
-            <span class="kpi-hint">Alvos + Abordagem + Diagnóstico + Proposta</span>
-          </div>
-          <div class="kpi kpi-accent">
-            <span class="kpi-label">Em abordagem</span>
-            <span class="kpi-value" id="kpi-abordagem">—</span>
-            <span class="kpi-hint">Precisa de ação hoje</span>
-          </div>
-          <div class="kpi kpi-success">
-            <span class="kpi-label">Fechados</span>
-            <span class="kpi-value" id="kpi-fechados">—</span>
-            <span class="kpi-hint">Total no board</span>
-          </div>
-          <div class="kpi kpi-money">
-            <span class="kpi-label" id="kpi-mes-label">Faturamento do mês</span>
-            <span class="kpi-value" id="kpi-mes">—</span>
-            <span class="kpi-hint" id="kpi-mes-hint">—</span>
-          </div>
-          <div class="kpi kpi-total">
-            <span class="kpi-label">Faturamento total</span>
-            <span class="kpi-value" id="kpi-total">—</span>
-            <span class="kpi-hint" id="kpi-total-hint">—</span>
-          </div>
-        </div>
-
-        <!-- Grid principal -->
-        <div class="grid-dash">
-          <!-- Funil -->
-          <div class="panel panel-funnel">
-            <div class="panel-head">
-              <h2>Funil de Conversão</h2>
-              <span class="panel-tag" id="conv-tag">—</span>
-            </div>
-            <div id="funnel-chart" class="funnel"></div>
-          </div>
-
-          <!-- Meta da semana -->
-          <div class="panel panel-meta">
-            <div class="panel-head">
-              <h2>Meta da Semana</h2>
-            </div>
-            <div id="meta-widget" class="meta">
-              <div class="meta-empty">Sem meta cadastrada.</div>
-            </div>
-          </div>
-
-          <!-- Meta Mensal (faturamento) -->
-          <div class="panel panel-meta-mensal">
-            <div class="panel-head">
-              <h2>Meta de Faturamento</h2>
-              <span class="panel-tag" id="meta-mensal-pct">—</span>
-            </div>
-            <div class="panel-month-badge" id="meta-mensal-month">—</div>
-            <div id="meta-mensal-widget" class="meta">
-              <div class="meta-empty">Sem meta mensal cadastrada.</div>
-            </div>
-          </div>
-
-          <!-- Faturamento mensal -->
-          <div class="panel panel-revenue">
-            <div class="panel-head">
-              <h2>Faturamento por mês</h2>
-              <div class="panel-head-actions">
-                <span class="panel-tag" id="revenue-total">—</span>
-                <button class="btn-ghost small" id="revenue-scope">Ver todos os meses</button>
-              </div>
-            </div>
-            <p class="panel-sub">Clique em uma barra para filtrar o mês.</p>
-            <div id="revenue-chart" class="chart-bars"></div>
-          </div>
-
-          <!-- Detalhe do mês selecionado -->
-          <div class="panel panel-month">
-            <div class="panel-head">
-              <h2 id="month-detail-title">Detalhe do mês</h2>
-              <span class="panel-tag" id="month-detail-total">—</span>
-            </div>
-            <div id="month-detail" class="month-detail">
-              <div class="empty">Selecione um mês.</div>
-            </div>
-          </div>
-
-          <!-- Etiquetas -->
-          <div class="panel panel-labels">
-            <div class="panel-head">
-              <h2>Distribuição por Etiqueta</h2>
-            </div>
-            <div id="labels-chart" class="labels-list"></div>
-          </div>
-
-          <!-- Semanal -->
-          <div class="panel panel-weekly">
-            <div class="panel-head">
-              <h2>Movimentação — últimas 8 semanas</h2>
-            </div>
-            <div id="weekly-chart"></div>
-          </div>
-        </div>
-
-        <!-- Abordagem HOJE -->
-        <div class="panel panel-today">
-          <div class="panel-head">
-            <h2>🔥 Abordagem HOJE</h2>
-            <span class="panel-tag" id="today-count">0</span>
-          </div>
-          <div id="today-list" class="today-list">
-            <div class="empty">Nenhum lead na coluna "Abordagem HOJE".</div>
-          </div>
-        </div>
-
-        <!-- Templates -->
-        <div class="panel panel-templates">
-          <div class="panel-head">
-            <h2>Templates de Mensagem</h2>
-            <button class="btn-ghost small" id="new-template">+ Novo</button>
-          </div>
-          <p class="panel-sub">
-            Use as variáveis <code>{{nome_empresa}}</code> e <code>{{nicho}}</code>
-            no texto. Elas serão substituídas ao abrir o WhatsApp.
-          </p>
-          <div id="templates-list" class="templates-list"></div>
-        </div>
-      </section>
-
-      <!-- ============================================================ -->
-      <!-- ABA: PROSPECÇÃO                                              -->
-      <!-- ============================================================ -->
-      <section class="tab-content" id="tab-prospect">
-        <div class="panel panel-lisa">
-          <div class="panel-head">
-            <h2><span class="lisa-mark">✦</span> Lisa</h2>
-            <div class="panel-head-actions">
-              <span class="panel-tag">assistente de prospecção</span>
-              <button type="button" id="lisa-limpar" class="btn-ghost small">Nova conversa</button>
-            </div>
-          </div>
-
-          <div id="lisa-chat" class="lisa-chat" aria-live="polite">
-            <div class="lisa-empty">
-              <p>Peça à Lisa para buscar empresas, escolher quem abordar ou escrever a mensagem. Ela propõe; quem cria no CRM é você.</p>
-              <div class="lisa-chips">
-                <button type="button" class="lisa-chip" data-sugestao="Busca 10 clínicas odontológicas em Curitiba com nota acima de 4.5 e me propõe as melhores para abordar.">Clínicas em Curitiba, nota 4.5+</button>
-                <button type="button" class="lisa-chip" data-sugestao="Quero empresas SEM site: busca academias em Joinville e propõe as que têm telefone.">Academias sem site</button>
-                <button type="button" class="lisa-chip" data-sugestao="Como está o funil este mês? Estamos perto da meta?">Como está o funil?</button>
-                <button type="button" class="lisa-chip" data-sugestao="Escreve um template de primeira abordagem no WhatsApp para restaurantes que ainda não têm site.">Template para restaurantes</button>
-              </div>
-            </div>
-          </div>
-
-          <div id="lisa-propostas" class="lisa-propostas" hidden>
-            <div class="lisa-propostas-head">
-              <strong>Leads propostos pela Lisa</strong>
-              <button type="button" id="lisa-todos" class="btn-ghost small">Marcar/desmarcar todos</button>
-            </div>
-            <p id="lisa-obs" class="lisa-obs"></p>
-            <div id="lisa-leads" class="lisa-leads"></div>
-            <button type="button" id="lisa-criar" class="btn-primary" disabled>Selecione leads</button>
-            <p class="lisa-nota">Os cards são criados com os dados da busca, na coluna de alvos do CRM, conferindo duplicados ("Evitar duplicados" abaixo).</p>
-          </div>
-
-          <div id="lisa-template" class="lisa-template" hidden>
-            <div class="lisa-propostas-head">
-              <strong>Template proposto: <span id="lisa-tpl-nome"></span></strong>
-            </div>
-            <p id="lisa-tpl-texto" class="lisa-tpl-texto"></p>
-            <div class="modal-actions">
-              <button type="button" id="lisa-tpl-descartar" class="btn-ghost small">Descartar</button>
-              <button type="button" id="lisa-tpl-salvar" class="btn-ghost small">Salvar nos templates</button>
-            </div>
-          </div>
-
-          <form id="lisa-form" class="lisa-form" autocomplete="off">
-            <textarea id="lisa-input" rows="2" placeholder="Ex.: busca 15 pet shops em Florianópolis sem site e me propõe os que têm telefone"></textarea>
-            <button type="submit" id="lisa-send" class="btn-primary">Enviar</button>
-          </form>
-        </div>
-
-        <div class="panel">
-          <div class="panel-head">
-            <h2>Buscar novos leads</h2>
-          </div>
-
-          <form id="search-form" autocomplete="off">
-            <label for="query">Termo de busca</label>
-            <input type="text" id="query" name="query"
-              placeholder="Ex: Clínicas de estética em São Paulo"
-              required minlength="3" />
-
-            <div class="form-row">
-              <div class="form-group">
-                <label for="limit">Quantidade</label>
-                <select id="limit" name="limit">
-                  <option value="5">5 leads</option>
-                  <option value="10" selected>10 leads</option>
-                  <option value="20">20 leads</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label for="min-rating">Rating mínimo</label>
-                <select id="min-rating" name="min-rating">
-                  <option value="0" selected>Qualquer</option>
-                  <option value="3">3.0+</option>
-                  <option value="4">4.0+</option>
-                  <option value="4.5">4.5+</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="filters">
-              <label class="check">
-                <input type="checkbox" id="require-phone" />
-                <span>Só com telefone</span>
-              </label>
-              <label class="check">
-                <input type="checkbox" id="require-website" />
-                <span>Só com site</span>
-              </label>
-              <label class="check">
-                <input type="checkbox" id="dedup" checked />
-                <span>Evitar duplicados</span>
-              </label>
-            </div>
-
-            <button type="submit" id="start-btn" class="btn-primary">
-              Iniciar Prospecção
+            <button class="btn-ghost only-dashboard" id="refresh-btn">↻ Atualizar</button>
+            <button class="icon-btn" id="theme-toggle" type="button" aria-label="Alternar tema claro/escuro" title="Alternar tema">
+              <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" /></svg>
+              <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg>
             </button>
-          </form>
+          </div>
+        </header>
 
-          <div class="progress" id="progress" hidden>
-            <div class="progress-info">
-              <span id="progress-label">Aguardando…</span>
-              <span id="progress-count">0 / 0</span>
+        <!-- ========================================================== -->
+        <!-- ABA: CENTRAL DE OPERAÇÃO                                   -->
+        <!-- ========================================================== -->
+        <section class="tab-content active" id="tab-dashboard">
+          <div class="bento">
+            <!-- Destaque: faturamento, funil e anéis -->
+            <div class="card hero span-8">
+              <div class="hero-stat">
+                <span class="hero-label" id="kpi-mes-label">Faturamento do mês</span>
+                <span class="hero-value" id="kpi-mes">—</span>
+                <span class="hero-hint" id="kpi-mes-hint">—</span>
+                <dl class="hero-rows">
+                  <div><dt>Total</dt><dd id="kpi-total">—</dd></div>
+                  <div><dt>No ano</dt><dd id="kpi-ano">—</dd></div>
+                </dl>
+              </div>
+              <div class="hero-stat">
+                <span class="hero-label">No funil</span>
+                <span class="hero-value hero-value-alt" id="kpi-funil">—</span>
+                <span class="hero-hint" id="kpi-funil-hint">—</span>
+                <dl class="hero-rows hero-stages" id="hero-stages"></dl>
+              </div>
+              <div class="hero-ring">
+                <span class="hero-ring-title">Conversão</span>
+                <div class="ring-box" id="ring-conv"></div>
+                <span class="hero-ring-hint" id="conv-tag">—</span>
+              </div>
+              <div class="hero-ring">
+                <span class="hero-ring-title">Meta do mês</span>
+                <div class="ring-box" id="ring-mes"></div>
+                <span class="hero-ring-hint" id="ring-mes-hint">—</span>
+              </div>
+              <div class="hero-ring">
+                <span class="hero-ring-title">Em andamento</span>
+                <div class="ring-box" id="ring-andamento"></div>
+                <span class="hero-ring-hint" id="ring-andamento-hint">—</span>
+              </div>
             </div>
-            <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
-          </div>
-        </div>
 
-        <div class="panel">
-          <div class="panel-head">
-            <h2>Log</h2>
-            <button type="button" id="clear-log" class="btn-ghost small">Limpar</button>
-          </div>
-          <div id="log" class="log" aria-live="polite">
-            <div class="log-empty">Aguardando o início de uma busca.</div>
-          </div>
+            <!-- Abordagem HOJE -->
+            <div class="card span-4 card-today" id="sec-hoje">
+              <div class="card-head">
+                <h2>Abordagem HOJE</h2>
+                <span class="tag tag-hot" id="today-count">0</span>
+              </div>
+              <div id="today-list" class="today-list">
+                <div class="empty">Nenhum lead na coluna "Abordagem HOJE".</div>
+              </div>
+            </div>
 
-          <div class="summary" id="summary" hidden>
-            <h3>Resumo</h3>
-            <ul>
-              <li>✓ Cadastrados: <strong id="sum-ok">0</strong></li>
-              <li>⊘ Falhas/Duplicados: <strong id="sum-fail">0</strong></li>
-              <li>⏱ Tempo: <strong id="sum-time">—</strong></li>
-            </ul>
+            <!-- Faturamento por mês + funil -->
+            <div class="card span-8 card-revenue" id="sec-faturamento">
+              <div class="revenue-main">
+                <div class="card-head">
+                  <div>
+                    <h2>Faturamento por mês</h2>
+                    <p class="card-big"><span id="revenue-total-label">Últimos 6 meses</span> <strong id="revenue-total">—</strong></p>
+                  </div>
+                  <button class="btn-ghost small" id="revenue-scope">Ver todos os meses</button>
+                </div>
+                <div id="revenue-chart" class="area-chart"></div>
+              </div>
+              <div class="revenue-side">
+                <div class="card-head">
+                  <h2>Funil de conversão</h2>
+                </div>
+                <div id="funnel-chart" class="funnel-radial"></div>
+              </div>
+            </div>
+
+            <!-- Meta de faturamento -->
+            <div class="card span-4" id="sec-metas">
+              <div class="card-head">
+                <h2>Meta de faturamento</h2>
+                <span class="tag" id="meta-mensal-pct">—</span>
+              </div>
+              <div class="month-badge" id="meta-mensal-month">—</div>
+              <div id="meta-chart" class="meta-chart"></div>
+              <div id="meta-mensal-widget" class="meta">
+                <div class="meta-empty">Sem meta mensal cadastrada.</div>
+              </div>
+            </div>
+
+            <!-- Meta da semana -->
+            <div class="card span-3">
+              <div class="card-head">
+                <h2>Meta da semana</h2>
+              </div>
+              <div id="meta-widget" class="meta meta-semana">
+                <div class="meta-empty">Sem meta cadastrada.</div>
+              </div>
+            </div>
+
+            <!-- Movimentação semanal -->
+            <div class="card span-5 card-fill">
+              <div class="card-head">
+                <h2>Movimentação — últimas 8 semanas</h2>
+                <span class="tag" id="weekly-total">—</span>
+              </div>
+              <div id="weekly-chart" class="week-bars"></div>
+            </div>
+
+            <!-- Etiquetas -->
+            <div class="card span-4 card-fill">
+              <div class="card-head">
+                <h2>Distribuição por etiqueta</h2>
+              </div>
+              <div id="labels-chart" class="labels-dots"></div>
+            </div>
+
+            <!-- Detalhe do mês -->
+            <div class="card span-8">
+              <div class="card-head">
+                <h2 id="month-detail-title">Detalhe do mês</h2>
+                <span class="tag" id="month-detail-total">—</span>
+              </div>
+              <div id="month-detail" class="month-detail">
+                <div class="empty">Selecione um mês.</div>
+              </div>
+            </div>
+
+            <!-- Templates -->
+            <div class="card span-4" id="sec-templates">
+              <div class="card-head">
+                <h2>Templates de mensagem</h2>
+                <button class="btn-ghost small" id="new-template">+ Novo</button>
+              </div>
+              <p class="card-sub">
+                Variáveis: <code>{{nome_empresa}}</code> e <code>{{nicho}}</code>.
+              </p>
+              <div id="templates-list" class="templates-list"></div>
+            </div>
           </div>
-        </div>
-      </section>
-    </main>
+        </section>
+
+        <!-- ========================================================== -->
+        <!-- ABA: PROSPECÇÃO & LISA                                     -->
+        <!-- ========================================================== -->
+        <section class="tab-content" id="tab-prospect">
+          <div class="prospect-grid">
+            <!-- Chat com a Lisa -->
+            <div class="card panel-lisa" id="sec-lisa">
+              <div class="card-head">
+                <h2><span class="lisa-mark">✦</span> Lisa</h2>
+                <div class="card-head-actions">
+                  <span class="tag">assistente de prospecção</span>
+                  <button type="button" id="lisa-limpar" class="btn-ghost small">Nova conversa</button>
+                </div>
+              </div>
+
+              <div id="lisa-chat" class="lisa-chat" aria-live="polite">
+                <div class="lisa-empty">
+                  <p>Peça à Lisa para buscar empresas, escolher quem abordar ou escrever a mensagem. Ela propõe; quem cria no CRM é você.</p>
+                  <div class="lisa-chips">
+                    <button type="button" class="lisa-chip" data-sugestao="Busca 10 clínicas odontológicas em Curitiba com nota acima de 4.5 e me propõe as melhores para abordar.">Clínicas em Curitiba, nota 4.5+</button>
+                    <button type="button" class="lisa-chip" data-sugestao="Quero empresas SEM site: busca academias em Joinville e propõe as que têm telefone.">Academias sem site</button>
+                    <button type="button" class="lisa-chip" data-sugestao="Como está o funil este mês? Estamos perto da meta?">Como está o funil?</button>
+                    <button type="button" class="lisa-chip" data-sugestao="Escreve um template de primeira abordagem no WhatsApp para restaurantes que ainda não têm site.">Template para restaurantes</button>
+                  </div>
+                </div>
+              </div>
+
+              <div id="lisa-propostas" class="lisa-propostas" hidden>
+                <div class="lisa-propostas-head">
+                  <strong>Leads propostos pela Lisa</strong>
+                  <button type="button" id="lisa-todos" class="btn-ghost small">Marcar/desmarcar todos</button>
+                </div>
+                <p id="lisa-obs" class="lisa-obs"></p>
+                <div id="lisa-leads" class="lisa-leads"></div>
+                <button type="button" id="lisa-criar" class="btn-primary" disabled>Selecione leads</button>
+                <p class="lisa-nota">Os cards são criados com os dados da busca, na coluna de alvos do CRM, conferindo duplicados.</p>
+              </div>
+
+              <div id="lisa-template" class="lisa-template" hidden>
+                <div class="lisa-propostas-head">
+                  <strong>Template proposto: <span id="lisa-tpl-nome"></span></strong>
+                </div>
+                <p id="lisa-tpl-texto" class="lisa-tpl-texto"></p>
+                <div class="modal-actions">
+                  <button type="button" id="lisa-tpl-descartar" class="btn-ghost small">Descartar</button>
+                  <button type="button" id="lisa-tpl-salvar" class="btn-ghost small">Salvar nos templates</button>
+                </div>
+              </div>
+
+              <form id="lisa-form" class="lisa-form" autocomplete="off">
+                <textarea id="lisa-input" rows="2" placeholder="Ex.: busca 15 pet shops em Florianópolis sem site e me propõe os que têm telefone"></textarea>
+                <button type="submit" id="lisa-send" class="btn-primary">Enviar</button>
+              </form>
+            </div>
+
+            <!-- Busca manual e log -->
+            <div class="prospect-col-tools">
+              <div class="card" id="sec-busca">
+                <div class="card-head">
+                  <h2>Buscar novos leads</h2>
+                </div>
+
+                <form id="search-form" autocomplete="off">
+                  <label for="query">Termo de busca</label>
+                  <input type="text" id="query" name="query"
+                    placeholder="Ex: Clínicas de estética em São Paulo"
+                    required minlength="3" />
+
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label for="limit">Quantidade</label>
+                      <select id="limit" name="limit">
+                        <option value="5">5 leads</option>
+                        <option value="10" selected>10 leads</option>
+                        <option value="20">20 leads</option>
+                      </select>
+                    </div>
+                    <div class="form-group">
+                      <label for="min-rating">Rating mínimo</label>
+                      <select id="min-rating" name="min-rating">
+                        <option value="0" selected>Qualquer</option>
+                        <option value="3">3.0+</option>
+                        <option value="4">4.0+</option>
+                        <option value="4.5">4.5+</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="filters">
+                    <label class="check">
+                      <input type="checkbox" id="require-phone" />
+                      <span>Só com telefone</span>
+                    </label>
+                    <label class="check">
+                      <input type="checkbox" id="require-website" />
+                      <span>Só com site</span>
+                    </label>
+                    <label class="check">
+                      <input type="checkbox" id="dedup" checked />
+                      <span>Evitar duplicados</span>
+                    </label>
+                  </div>
+
+                  <button type="submit" id="start-btn" class="btn-primary">
+                    Iniciar Prospecção
+                  </button>
+                </form>
+
+                <div class="progress" id="progress" hidden>
+                  <div class="progress-info">
+                    <span id="progress-label">Aguardando…</span>
+                    <span id="progress-count">0 / 0</span>
+                  </div>
+                  <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+                </div>
+              </div>
+
+              <div class="card" id="sec-log">
+                <div class="card-head">
+                  <h2>Log</h2>
+                  <button type="button" id="clear-log" class="btn-ghost small">Limpar</button>
+                </div>
+                <div id="log" class="log" aria-live="polite">
+                  <div class="log-empty">Aguardando o início de uma busca.</div>
+                </div>
+
+                <div class="summary" id="summary" hidden>
+                  <h3>Resumo</h3>
+                  <ul>
+                    <li>✓ Cadastrados: <strong id="sum-ok">0</strong></li>
+                    <li>⊘ Falhas/Duplicados: <strong id="sum-fail">0</strong></li>
+                    <li>⏱ Tempo: <strong id="sum-time">—</strong></li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
 
     <!-- Modal de template -->
     <div class="modal" id="template-modal" hidden>
@@ -354,7 +426,7 @@
         <div class="modal-head">
           <h3>Acesso da equipe</h3>
         </div>
-        <p class="panel-sub" id="acesso-msg">Informe a chave de acesso da equipe.</p>
+        <p class="card-sub" id="acesso-msg">Informe a chave de acesso da equipe.</p>
         <label for="acesso-input">Chave de acesso</label>
         <input type="password" id="acesso-input" autocomplete="current-password" />
         <div class="modal-actions">

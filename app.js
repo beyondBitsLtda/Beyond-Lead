@@ -70,15 +70,37 @@
   }
 
   /* ============================================================
-     Sistema de abas
+     Navegação (menu lateral) e tema
      ============================================================ */
-  $$('.tab-btn').forEach((btn) => {
+  const TITULOS = { dashboard: 'Central de Operação', prospect: 'Prospecção & Lisa' };
+  let abaAtual = 'dashboard';
+
+  // Um item do menu abre a aba e, se tiver data-alvo, rola até o bloco.
+  function abrirAba(aba, alvo) {
+    const mudou = aba !== abaAtual;
+    abaAtual = aba;
+    document.body.dataset.aba = aba;
+    $$('.tab-content').forEach((c) => c.classList.toggle('active', c.id === `tab-${aba}`));
+    $('#page-title').textContent = TITULOS[aba] || '';
+    if (aba === 'dashboard' && mudou) loadDashboard();
+    const el = alvo ? document.getElementById(alvo) : null;
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    else window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  $$('.nav-item').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const target = `tab-${btn.dataset.tab}`;
-      $$('.tab-btn').forEach((b) => b.classList.toggle('active', b === btn));
-      $$('.tab-content').forEach((c) => c.classList.toggle('active', c.id === target));
-      if (btn.dataset.tab === 'dashboard') loadDashboard();
+      $$('.nav-item').forEach((b) => b.classList.toggle('active', b === btn));
+      abrirAba(btn.dataset.tab, btn.dataset.alvo);
     });
+  });
+
+  // O tema inicial é aplicado no <head> (sem piscar); aqui só a troca pelo botão.
+  const TEMA_KEY = 'beyond_lead_tema_v1';
+  $('#theme-toggle').addEventListener('click', () => {
+    const novo = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+    document.documentElement.dataset.theme = novo;
+    try { localStorage.setItem(TEMA_KEY, novo); } catch {}
   });
 
   /* ============================================================
@@ -87,6 +109,12 @@
   const fmtBRL = (v) =>
     v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
   const fmtNum = (v) => v.toLocaleString('pt-BR');
+  const fmtPct = (v) => `${Math.round(Number(v) || 0)}%`;
+  function fmtCurto(v) {
+    if (v >= 1e6) return `R$ ${(v / 1e6).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mi`;
+    if (v >= 1e3) return `R$ ${(v / 1e3).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil`;
+    return fmtBRL(v);
+  }
 
   /* ============================================================
      DASHBOARD
@@ -143,33 +171,30 @@
   }
 
   function renderDashboard(d) {
-    // Seletor de meses
     syncMonthSelect(d);
 
-    // KPIs que não dependem do mês
-    $('#kpi-funil').textContent = fmtNum(d.totals.emFunil);
-    $('#kpi-abordagem').textContent = fmtNum(d.totals.abordagem);
-    $('#kpi-fechados').textContent = fmtNum(d.totals.fechado);
+    // Destaque: números que não dependem do mês
+    const t = d.totals;
+    $('#kpi-funil').textContent = fmtNum(t.emFunil);
+    $('#kpi-funil-hint').textContent = `${fmtNum(t.fechado)} fechados · ${fmtNum(t.perdido)} perdidos`;
     $('#kpi-total').textContent = fmtBRL(d.revenue.allTimeFechado);
-    $('#kpi-total-hint').textContent =
-      `${d.months.length} mês(es) · Ano ${new Date().getFullYear()}: ${fmtBRL(d.revenue.currentYear)}`;
+    $('#kpi-ano').textContent = fmtBRL(d.revenue.currentYear);
+    $('#hero-stages').innerHTML = [
+      ['Alvos', t.alvos], ['Abordagem', t.abordagem], ['Diagnóstico', t.diagnostico], ['Proposta', t.proposta]
+    ].map(([nome, n]) => `<div><dt>${nome}</dt><dd>${fmtNum(n)}</dd></div>`).join('');
 
-    // Funil
-    renderFunnel(d.totals);
+    $('#ring-conv').innerHTML = anel(d.conversion.rate, 'conv');
+    $('#conv-tag').textContent = `${fmtNum(d.conversion.won)} ganho(s) · ${fmtNum(d.conversion.lost)} perdido(s)`;
 
-    // Taxa de conversão
-    $('#conv-tag').textContent = `Conv. ${d.conversion.rate}%`;
+    // "Em andamento": quanto do funil já saiu dos alvos (abordagem, diagnóstico ou proposta).
+    const andamento = t.abordagem + t.diagnostico + t.proposta;
+    $('#ring-andamento').innerHTML = anel(t.emFunil ? (andamento / t.emFunil) * 100 : 0, 'and');
+    $('#ring-andamento-hint').textContent = `${fmtNum(andamento)} de ${fmtNum(t.emFunil)} já saíram dos alvos`;
 
-    // Meta da semana
+    renderFunnel(t);
     renderMeta(d.metaSemana);
-
-    // Etiquetas
     renderLabels(d.byLabel);
-
-    // Semanal
     renderWeekly(d.weeklySeries);
-
-    // Abordagem HOJE
     renderToday(d.abordagemHoje);
 
     // Tudo que depende do mês escolhido
@@ -201,12 +226,17 @@
   function renderMonthScoped(d) {
     const m = getSelectedMonth();
 
-    // KPI do mês
     $('#kpi-mes-label').textContent = m ? `Faturamento — ${m.labelLong}` : 'Faturamento do mês';
     $('#kpi-mes').textContent = fmtBRL(m ? m.revenue : 0);
     $('#kpi-mes-hint').textContent = m
       ? `${m.count} serviço(s) fechado(s)`
       : 'Sem dados para este mês';
+
+    const temMeta = Boolean(m && m.target);
+    $('#ring-mes').innerHTML = anel(temMeta ? m.pct : 0, 'mes');
+    $('#ring-mes-hint').textContent = temMeta
+      ? `${fmtCurto(m.revenue)} de ${fmtCurto(m.target)}`
+      : 'sem meta cadastrada';
 
     renderMetaMensal(m);
     renderRevenue(d);
@@ -245,27 +275,83 @@
     }).join('');
   }
 
+  /* ---------- Gráficos (SVG desenhado aqui, sem biblioteca) ---------- */
+
+  // Cores pelas variáveis do tema: trocar claro/escuro recolore sem redesenhar.
+  const DEGRADES = {
+    conv: ['var(--cyan)', 'var(--violet)'],
+    mes: ['var(--magenta)', 'var(--cyan)'],
+    and: ['var(--violet)', 'var(--magenta)'],
+    semana: ['var(--magenta)', 'var(--violet)']
+  };
+
+  function degrade(id, [de, para], vertical = false) {
+    const fim = vertical ? 'x2="0" y2="1"' : 'x2="1" y2="1"';
+    return `<linearGradient id="${id}" x1="0" y1="0" ${fim}>
+      <stop offset="0" style="stop-color:${de}"/><stop offset="1" style="stop-color:${para}"/></linearGradient>`;
+  }
+
+  /** Anel de porcentagem (o arco para em 100%; o número mostra o valor real). */
+  function anel(pct, tipo) {
+    const r = 46;
+    const c = 2 * Math.PI * r;
+    const p = Math.max(0, Math.min(100, Number(pct) || 0));
+    const id = `g-anel-${tipo}`;
+    return `<svg viewBox="0 0 120 120" role="img" aria-label="${fmtPct(pct)}">
+      <defs>${degrade(id, DEGRADES[tipo])}</defs>
+      <circle class="ring-hole" cx="60" cy="60" r="38"/>
+      <circle class="ring-track" cx="60" cy="60" r="${r}" stroke-width="13"/>
+      ${p > 0 ? `<circle class="ring-arc" cx="60" cy="60" r="${r}" stroke-width="13" stroke="url(#${id})"
+        stroke-dasharray="${((c * p) / 100).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 60 60)"/>` : ''}
+    </svg><span class="ring-value">${fmtPct(pct)}</span>`;
+  }
+
+  /** Curva suave passando pelos pontos (Catmull-Rom), presa entre topo e base. */
+  function curva(pts, topo, base) {
+    if (pts.length < 2) return pts.length ? `M${pts[0].x},${pts[0].y}` : '';
+    const prende = (v) => Math.max(topo, Math.min(base, v));
+    let d = `M${pts[0].x},${pts[0].y}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[i - 1] || pts[i];
+      const p1 = pts[i];
+      const p2 = pts[i + 1];
+      const p3 = pts[i + 2] || p2;
+      const c1x = p1.x + (p2.x - p0.x) / 6;
+      const c1y = prende(p1.y + (p2.y - p0.y) / 6);
+      const c2x = p2.x - (p3.x - p1.x) / 6;
+      const c2y = prende(p2.y - (p3.y - p1.y) / 6);
+      d += ` C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2.x},${p2.y}`;
+    }
+    return d;
+  }
+
+  const ETAPAS = [
+    { key: 'alvos', label: 'Alvos', cor: 'var(--violet)' },
+    { key: 'abordagem', label: 'Abordagem', cor: 'var(--magenta)' },
+    { key: 'diagnostico', label: 'Diagnóstico', cor: 'var(--pink)' },
+    { key: 'proposta', label: 'Proposta', cor: 'var(--cyan)' },
+    { key: 'fechado', label: 'Fechado', cor: 'var(--teal)' },
+    { key: 'perdido', label: 'Perdido', cor: 'var(--slate)' }
+  ];
+
+  /** Funil em anéis concêntricos: cada etapa é um arco de 3/4 de volta, proporcional à maior. */
   function renderFunnel(t) {
-    const stages = [
-      { key: 'alvos', label: 'Alvos', count: t.alvos },
-      { key: 'abordagem', label: 'Abordagem', count: t.abordagem },
-      { key: 'diagnostico', label: 'Diagnóstico', count: t.diagnostico },
-      { key: 'proposta', label: 'Proposta', count: t.proposta },
-      { key: 'fechado', label: 'Fechado', count: t.fechado },
-      { key: 'perdido', label: 'Perdido', count: t.perdido }
-    ];
-    const max = Math.max(...stages.map((s) => s.count), 1);
-    const el = $('#funnel-chart');
-    el.innerHTML = stages.map((s) => `
-      <div class="funnel-row">
-        <div class="funnel-label">${s.label}</div>
-        <div class="funnel-bar-wrap">
-          <div class="funnel-bar" style="width:${(s.count / max) * 100}%">
-            ${s.count > 0 ? s.count : ''}
-          </div>
-        </div>
-      </div>
-    `).join('');
+    const max = Math.max(...ETAPAS.map((e) => t[e.key] || 0), 1);
+    const arcos = ETAPAS.map((e, i) => {
+      const r = 98 - i * 15;
+      const volta = 2 * Math.PI * r * 0.75;
+      const n = t[e.key] || 0;
+      return `
+        <circle class="funnel-arc ring-track" cx="110" cy="110" r="${r}" stroke-width="9"
+          stroke-dasharray="${volta.toFixed(1)} 999" transform="rotate(-90 110 110)"/>
+        ${n > 0 ? `<circle class="funnel-arc" cx="110" cy="110" r="${r}" stroke-width="9" stroke="${e.cor}"
+          stroke-dasharray="${((volta * n) / max).toFixed(1)} 999" transform="rotate(-90 110 110)"/>` : ''}`;
+    }).join('');
+    $('#funnel-chart').innerHTML = `
+      <svg viewBox="0 0 220 220" role="img" aria-label="Funil de conversão por etapa">${arcos}</svg>
+      <ul class="funnel-legend">${ETAPAS.map((e) => `
+        <li><span class="dot" style="background:${e.cor}"></span>${e.label}<strong>${fmtNum(t[e.key] || 0)}</strong></li>`).join('')}
+      </ul>`;
   }
 
   function renderMeta(meta) {
@@ -275,13 +361,36 @@
       return;
     }
     const pct = Math.round((meta.done / meta.total) * 100);
+
+    // Anel raiado: 60 traços acesos até a porcentagem, mais um anel cheio por dentro.
+    const TRACOS = 60;
+    const acesos = Math.round((pct / 100) * TRACOS);
+    const tracos = Array.from({ length: TRACOS }, (_, i) => {
+      const ang = ((i * 360) / TRACOS - 90) * (Math.PI / 180);
+      const [x1, y1, x2, y2] = [72, 72, 94, 94].map((r, k) =>
+        100 + r * (k % 2 === 0 ? Math.cos(ang) : Math.sin(ang)));
+      const cor = i < acesos ? `hsl(${297 - (39 * i) / (TRACOS - 1)} 85% 62%)` : 'var(--track)';
+      return `<line class="tick" x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${cor}"/>`;
+    }).join('');
+    const r = 55;
+    const c = 2 * Math.PI * r;
+
     const items = meta.items.slice(0, 5).map((i) =>
       `<li class="${i.done ? 'done' : ''}">${i.done ? '✓' : '○'} ${escapeHtml(i.name)}</li>`
     ).join('');
     el.innerHTML = `
+      <div class="sunburst">
+        <svg viewBox="0 0 200 200" role="img" aria-label="${pct}% da meta da semana">
+          <defs>${degrade('g-semana', DEGRADES.semana)}</defs>
+          ${tracos}
+          <circle class="ring-track" cx="100" cy="100" r="${r}" stroke-width="16"/>
+          ${pct > 0 ? `<circle class="ring-arc" cx="100" cy="100" r="${r}" stroke-width="16" stroke="url(#g-semana)"
+            stroke-dasharray="${((c * pct) / 100).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 100 100)"/>` : ''}
+        </svg>
+        <span class="ring-value">${pct}%</span>
+      </div>
       <div class="meta-title">${escapeHtml(meta.name)}</div>
-      <div class="meta-progress"><div class="meta-progress-fill" style="width:${pct}%"></div></div>
-      <div class="meta-pct">${meta.done} de ${meta.total} · ${pct}%</div>
+      <div class="meta-pct">${meta.done} de ${meta.total} itens</div>
       <ul class="meta-items">${items}</ul>
     `;
   }
@@ -292,39 +401,31 @@
     const monthBadge = $('#meta-mensal-month');
 
     monthBadge.textContent = m ? m.labelLong : '—';
+    renderMetaChart(m);
 
     if (!m || !m.target) {
-      el.innerHTML = '<div class="meta-empty">Sem meta cadastrada para este mês.<br><small>Crie um card "Meta Mensal" na coluna Metas (vale pra todos os meses) ou "Meta de Agosto" para um mês específico, com um item de checklist tipo "Fechar Serviços de R$ 5.000".</small></div>';
+      el.innerHTML = '<div class="meta-empty">Sem meta cadastrada para este mês.<small>Crie um card "Meta Mensal" na coluna Metas (vale pra todos os meses) ou "Meta de Agosto" para um mês específico, com um item de checklist tipo "Fechar Serviços de R$ 5.000".</small></div>';
       pctTag.textContent = '—';
-      pctTag.style.background = '';
-      pctTag.style.color = '';
-      pctTag.style.borderColor = '';
+      pctTag.className = 'tag';
       return;
     }
 
-    const meta = {
-      target: m.target,
-      current: m.revenue,
-      pct: Math.min(100, m.pct)
-    };
-    const remain = Math.max(0, meta.target - meta.current);
+    const remain = Math.max(0, m.target - m.revenue);
     const isComplete = m.pct >= 100;
     pctTag.textContent = `${m.pct}%`;
-    pctTag.style.background = isComplete ? 'rgba(74, 222, 128, 0.15)' : 'rgba(251, 191, 36, 0.12)';
-    pctTag.style.color = isComplete ? 'var(--success)' : '#facc15';
-    pctTag.style.borderColor = isComplete ? 'rgba(74, 222, 128, 0.3)' : 'rgba(251, 191, 36, 0.3)';
+    pctTag.className = `tag ${isComplete ? 'tag-ok' : 'tag-warn'}`;
 
     el.innerHTML = `
       <div class="meta-mensal-values">
-        <span class="meta-mensal-current">${fmtBRL(meta.current)}</span>
-        <span class="meta-mensal-target">de ${fmtBRL(meta.target)}</span>
+        <span class="meta-mensal-current">${fmtBRL(m.revenue)}</span>
+        <span class="meta-mensal-target">de ${fmtBRL(m.target)}</span>
       </div>
       <div class="meta-mensal-bar">
-        <div class="meta-mensal-bar-fill ${isComplete ? 'complete' : ''}" style="width:${meta.pct}%"></div>
+        <div class="meta-mensal-bar-fill ${isComplete ? 'complete' : ''}" style="width:${Math.min(100, m.pct)}%"></div>
       </div>
       <div class="meta-mensal-remain">
         ${isComplete
-          ? `🎉 Meta batida! Excedeu em ${fmtBRL(meta.current - meta.target)}.`
+          ? `🎉 Meta batida! Excedeu em ${fmtBRL(m.revenue - m.target)}.`
           : `Faltam ${fmtBRL(remain)} para bater a meta.`}
       </div>
       <div class="meta-mensal-source">
@@ -333,73 +434,131 @@
     `;
   }
 
+  /** Pontos: % da meta atingida nos últimos 6 meses com meta, com a linha dos 100%. */
+  function renderMetaChart(sel) {
+    const el = $('#meta-chart');
+    const meses = getMonths().filter((m) => m.target > 0).slice(-6);
+    if (!meses.length) { el.innerHTML = ''; return; }
+
+    const W = 320, H = 170, L = 34, R = 12, T = 12, B = 22;
+    const maxY = Math.ceil(Math.max(100, ...meses.map((m) => m.pct)) / 25) * 25;
+    const y = (v) => T + (H - T - B) * (1 - Math.min(v, maxY) / maxY);
+    const x = (i) => (meses.length > 1 ? L + (i * (W - L - R)) / (meses.length - 1) : (L + W - R) / 2);
+    const marcas = [0, 25, 50, 75, 100].concat(maxY > 100 ? [maxY] : []);
+    const pts = meses.map((m, i) => ({ x: +x(i).toFixed(1), y: +y(m.pct).toFixed(1), m }));
+    const linha = curva(pts, T, H - B);
+    const area = pts.length > 1 ? `${linha} L${pts[pts.length - 1].x},${H - B} L${pts[0].x},${H - B} Z` : '';
+
+    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Porcentagem da meta atingida por mês">
+      <defs>${degrade('g-meta-area', ['var(--violet)', 'transparent'], true)}</defs>
+      ${marcas.map((v) => `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/>
+        <text x="${L - 6}" y="${y(v) + 3}" text-anchor="end">${v}%</text>`).join('')}
+      ${area ? `<path d="${area}" fill="url(#g-meta-area)" opacity="0.35"/>` : ''}
+      <line class="meta-line" x1="${L}" x2="${W - R}" y1="${y(100)}" y2="${y(100)}"/>
+      <text class="meta-line-label" x="${W - R}" y="${y(100) - 5}" text-anchor="end">meta</text>
+      ${pts.map((p) => {
+        const ativo = sel && p.m.key === sel.key;
+        const cor = p.m.pct >= 100 ? 'var(--teal)' : ativo ? 'var(--magenta)' : 'var(--violet)';
+        return `<circle class="glow" cx="${p.x}" cy="${p.y}" r="${ativo ? 10 : 7}" fill="${cor}"/>
+          <circle cx="${p.x}" cy="${p.y}" r="${ativo ? 5 : 3.5}" fill="${ativo ? '#fff' : cor}" stroke="${cor}" stroke-width="2">
+            <title>${escapeHtml(p.m.labelLong)}: ${p.m.pct}% da meta</title></circle>
+          <text x="${p.x}" y="${H - 6}" text-anchor="middle">${escapeHtml(p.m.label)}</text>`;
+      }).join('')}
+    </svg>`;
+  }
+
+  /** Faturamento por mês: área suave com pontos clicáveis e pílulas dos meses embaixo. */
   function renderRevenue(d) {
     const series = showAllMonths
       ? (d.months || []).map((m) => ({ key: m.key, label: m.label, value: m.revenue }))
       : (d.revenue.monthlySeries || []);
 
     const total = series.reduce((a, s) => a + s.value, 0);
-    $('#revenue-total').textContent = showAllMonths
-      ? `Total ${fmtBRL(d.revenue.allTimeFechado)}`
-      : `6 meses ${fmtBRL(total)}`;
+    $('#revenue-total-label').textContent = showAllMonths ? 'Total' : 'Últimos 6 meses';
+    $('#revenue-total').textContent = fmtBRL(showAllMonths ? d.revenue.allTimeFechado : total);
 
-    const max = Math.max(...series.map((s) => s.value), 1);
     const el = $('#revenue-chart');
-
     if (series.length === 0) {
       el.innerHTML = '<div class="empty">Sem faturamento registrado.</div>';
       return;
     }
 
-    el.innerHTML = series.map((s) => {
-      const h = (s.value / max) * 100;
-      const active = s.key === selectedMonthKey ? ' active' : '';
-      return `
-        <div class="chart-bar-col${active}" data-month="${s.key || ''}" role="button" tabindex="0">
-          <div class="chart-bar-wrap">
-            <div class="chart-bar${active}" style="height:${h}%">
-              ${s.value > 0 ? `<span class="chart-bar-value">${fmtBRL(s.value)}</span>` : ''}
-            </div>
-          </div>
-          <div class="chart-bar-label">${s.label}</div>
-        </div>
-      `;
-    }).join('');
+    const W = 600, H = 230, L = 14, R = 14, T = 34, B = 8;
+    const max = Math.max(...series.map((s) => s.value), 1);
+    const n = series.length;
+    const pts = series.map((s, i) => ({
+      x: +(n > 1 ? L + (i * (W - L - R)) / (n - 1) : W / 2).toFixed(1),
+      y: +(T + (H - T - B) * (1 - s.value / max)).toFixed(1),
+      s
+    }));
+    const linha = curva(pts, T, H - B);
+    const area = n > 1 ? `${linha} L${pts[n - 1].x},${H - B} L${pts[0].x},${H - B} Z` : '';
+    const maior = Math.max(...series.map((s) => s.value));
+    const comRotulo = (s) => s.value > 0 && (n <= 8 || s.key === selectedMonthKey || s.value === maior);
 
-    el.querySelectorAll('.chart-bar-col').forEach((col) => {
-      const key = col.dataset.month;
+    el.innerHTML = `
+      <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Faturamento por mês">
+        <defs>
+          ${degrade('g-area', ['var(--teal)', 'transparent'], true)}
+          ${degrade('g-linha', ['var(--violet)', 'var(--teal)'])}
+        </defs>
+        ${pts.filter((p) => p.s.value > 0).map((p) =>
+          `<line class="area-guide" x1="${p.x}" x2="${p.x}" y1="${p.y}" y2="${H - B}"/>`).join('')}
+        ${area ? `<path d="${area}" fill="url(#g-area)" opacity="0.45"/>` : ''}
+        ${n > 1 ? `<path class="area-line" d="${linha}" stroke="url(#g-linha)"/>` : ''}
+        ${pts.map((p) => {
+          const ativo = p.s.key === selectedMonthKey;
+          return `<g data-month="${p.s.key || ''}">
+            ${comRotulo(p.s) ? `<text class="area-value" x="${p.x}" y="${p.y - 14}">${fmtCurto(p.s.value)}</text>` : ''}
+            <circle class="area-dot${ativo ? ' active' : ''}" cx="${p.x}" cy="${p.y}" r="${ativo ? 7.5 : 6}"
+              fill="${ativo ? 'var(--magenta)' : 'var(--card-solid)'}" stroke="${ativo ? 'var(--magenta)' : 'var(--teal)'}">
+              <title>${escapeHtml(p.s.label)}: ${fmtBRL(p.s.value)}</title></circle>
+          </g>`;
+        }).join('')}
+      </svg>
+      <div class="pills">${series.map((s) =>
+        `<button type="button" class="pill${s.key === selectedMonthKey ? ' active' : ''}" data-month="${s.key || ''}">${escapeHtml(s.label)}</button>`
+      ).join('')}</div>`;
+
+    el.querySelectorAll('[data-month]').forEach((alvo) => {
+      const key = alvo.dataset.month;
       if (!key) return;
-      const pick = () => {
+      alvo.addEventListener('click', () => {
         if (!getMonths().some((m) => m.key === key)) return;
         selectedMonthKey = key;
         localStorage.setItem(MONTH_KEY_STORAGE, key);
         monthSelect.value = key;
         renderMonthScoped(dashState);
-      };
-      col.addEventListener('click', pick);
-      col.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
+      });
     });
   }
 
   function renderWeekly(series) {
-    const max = Math.max(...series.map((s) => s.value), 1);
     const el = $('#weekly-chart');
-    el.className = 'chart-bars';
+    const max = Math.max(...series.map((s) => s.value), 1);
+    const maior = Math.max(...series.map((s) => s.value));
+    const total = series.reduce((a, s) => a + s.value, 0);
+    $('#weekly-total').textContent = `${fmtNum(total)} no período`;
     el.innerHTML = series.map((s) => {
       const h = (s.value / max) * 100;
+      const topo = maior > 0 && s.value === maior;
       return `
-        <div class="chart-bar-col">
-          <div class="chart-bar-wrap">
-            <div class="chart-bar" style="height:${h}%">
-              ${s.value > 0 ? `<span class="chart-bar-value">${s.value}</span>` : ''}
+        <div class="wk-col${topo ? ' top' : ''}">
+          <div class="wk-track">
+            <div class="wk-bar" style="height:${Math.max(h, 2)}%">
+              <span class="wk-value">${s.value}</span>
+              ${s.value > 0 ? '<span class="wk-core"></span>' : ''}
             </div>
           </div>
-          <div class="chart-bar-label">${s.label}</div>
+          <div class="wk-label" title="Semana ${escapeAttr(s.label.replace(/^W/, ''))} do ano">${escapeHtml(s.label.replace(/^W/, 'S'))}</div>
         </div>
       `;
     }).join('');
   }
 
+  const CORES_ETIQUETA = ['var(--magenta)', 'var(--pink)', 'var(--violet)', 'var(--cyan)', 'var(--teal)', 'var(--indigo)'];
+
+  /** Etiquetas em pontinhos: 10 pontos acesos na proporção da maior, e a % do total. */
   function renderLabels(byLabel) {
     const entries = Object.entries(byLabel).sort((a, b) => b[1] - a[1]);
     const el = $('#labels-chart');
@@ -408,29 +567,25 @@
       return;
     }
     const max = entries[0][1];
-    el.innerHTML = entries.slice(0, 8).map(([name, count]) => `
-      <div class="label-row">
-        <div class="label-swatch" style="background:${labelColor(name)};color:${labelColor(name)}"></div>
-        <div class="label-name">${escapeHtml(name)}</div>
-        <div class="label-bar-wrap"><div class="label-bar" style="width:${(count / max) * 100}%"></div></div>
-        <div class="label-count">${count}</div>
-      </div>
-    `).join('');
+    const total = entries.reduce((a, [, n]) => a + n, 0);
+    el.innerHTML = entries.slice(0, 7).map(([name, count], i) => {
+      const acesos = Math.max(1, Math.round((count / max) * 10));
+      return `
+        <div class="ld-row" style="--c:${CORES_ETIQUETA[i % CORES_ETIQUETA.length]}" title="${escapeAttr(name)}: ${count}">
+          <span class="ld-name">${escapeHtml(name)}</span>
+          <span class="ld-dots">${Array.from({ length: 10 }, (_, k) => `<i class="${k < acesos ? 'on' : ''}"></i>`).join('')}</span>
+          <span class="ld-pct">${Math.round((count / total) * 100)}%</span>
+        </div>`;
+    }).join('');
   }
 
-  function labelColor(name) {
-    const n = name.toLowerCase();
-    if (n.includes('site') || n.includes('sistema')) return '#60a5fa';
-    if (n.includes('designer') || n.includes('portfolio')) return '#c084fc';
-    if (n.includes('quente')) return '#ef4444';
-    if (n.includes('contato')) return '#10b981';
-    if (n.includes('julho') || n.includes('mês')) return '#eab308';
-    if (n.includes('indicação')) return '#facc15';
-    if (n.includes('exemplo')) return '#f97316';
-    let h = 0;
-    for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
-    return `hsl(${Math.abs(h) % 360}, 70%, 65%)`;
+  function iniciais(nome) {
+    const partes = String(nome).trim().split(/\s+/).filter((p) => /[\p{L}\d]/u.test(p));
+    return ((partes[0] || '?')[0] + (partes[1] ? partes[1][0] : '')).toUpperCase();
   }
+
+  const ICONE_ABRIR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>';
+  const ICONE_WHATS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1.4-4.2A8 8 0 1 1 8.3 18.7z"/><path d="M9 9.5c.3 2.4 2.1 4.3 4.5 4.8l1-1.2 2 .9-.4 1.7c-4.2.3-8-3.4-7.8-7.6l1.7-.4.9 2z"/></svg>';
 
   function renderToday(items) {
     $('#today-count').textContent = items.length;
@@ -439,21 +594,23 @@
       el.innerHTML = '<div class="empty">Nenhum lead na coluna "Abordagem HOJE".</div>';
       return;
     }
-    el.innerHTML = items.map((c) => `
-      <div class="today-card">
-        <h4 class="today-name">${escapeHtml(c.name)}</h4>
-        ${c.labels.length ? `<div class="today-labels">${c.labels.map((l) => `<span>${escapeHtml(l)}</span>`).join('')}</div>` : ''}
-        <div class="today-meta">
-          ${c.phone ? `📞 ${escapeHtml(c.phone)}` : '<em>sem telefone</em>'}
-        </div>
-        <div class="today-actions">
-          <a href="${c.url}" target="_blank" rel="noopener">Abacato</a>
-          ${c.phone
-            ? `<button class="wa-btn" data-action="send" data-name="${escapeAttr(c.name)}" data-phone="${escapeAttr(c.phone)}">💬 WhatsApp</button>`
-            : `<button disabled>Sem fone</button>`}
-        </div>
-      </div>
-    `).join('');
+    el.innerHTML = items.map((c) => {
+      const meta = [c.phone ? escapeHtml(c.phone) : 'sem telefone', ...c.labels.map(escapeHtml)].join(' · ');
+      return `
+        <div class="today-row">
+          <span class="avatar" aria-hidden="true">${escapeHtml(iniciais(c.name))}</span>
+          <div class="today-info">
+            <h4 class="today-name" title="${escapeAttr(c.name)}">${escapeHtml(c.name)}</h4>
+            <div class="today-meta">${meta}</div>
+          </div>
+          <div class="today-actions">
+            <a href="${c.url}" target="_blank" rel="noopener" title="Abrir no Abacato" aria-label="Abrir ${escapeAttr(c.name)} no Abacato">${ICONE_ABRIR}</a>
+            ${c.phone
+              ? `<button class="wa-btn" data-action="send" data-name="${escapeAttr(c.name)}" data-phone="${escapeAttr(c.phone)}" title="Enviar WhatsApp" aria-label="Enviar WhatsApp para ${escapeAttr(c.name)}">${ICONE_WHATS}</button>`
+              : `<button disabled title="Sem telefone" aria-label="Sem telefone">${ICONE_WHATS}</button>`}
+          </div>
+        </div>`;
+    }).join('');
     el.querySelectorAll('[data-action="send"]').forEach((btn) => {
       btn.addEventListener('click', () => openSendModal(btn.dataset.name, btn.dataset.phone));
     });
